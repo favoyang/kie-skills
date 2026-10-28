@@ -77,12 +77,11 @@ kie-output/
 
 ## Where output goes
 
-The CLI does not trust the working directory. It walks up from wherever it was invoked
-to the nearest `.git` or `kie.config.json`, and treats that as the project root. Running
-from `notes/` or `src/` still writes to `<project>/kie-output/`.
+The project root is the directory you run from. There is no filesystem sniffing: run
+`kie` from `notes/` and output goes to `notes/kie-output/`.
 
-Override with `--project DIR` (or `KIE_PROJECT_DIR`) when the project lives elsewhere,
-and `--out DIR` / `KIE_OUT_DIR` to move the output itself. Precedence:
+Point it elsewhere with `--project DIR` or `KIE_PROJECT_DIR`. `plan`, `run`, and `info`
+print the resolved project, so this is never a guess. Precedence:
 
 ```
 --out DIR

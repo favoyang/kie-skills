@@ -355,7 +355,7 @@ async function main(argv) {
   info     show resolved paths and policy
 
 global options:
-  --project DIR    treat DIR as the project root instead of discovering it
+  --project DIR    run as if DIR were the working directory
   --out DIR        write this run under DIR instead of <project>/kie-output
 
 environment:

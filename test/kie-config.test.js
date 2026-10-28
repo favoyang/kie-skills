@@ -81,28 +81,24 @@ test("policy shape validation rejects families missing from the task map", () =>
   );
 });
 
-test("the project root is discovered by walking up to a marker", async () => {
+test("the working directory is the project root by default", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "kie-root-"));
-  await mkdir(path.join(root, ".git"));
   const nested = path.join(root, "notes", "deep");
   await mkdir(nested, { recursive: true });
 
-  assert.deepEqual(resolveProject(nested), { dir: root, source: "marker" });
+  assert.deepEqual(resolveProject(nested), { dir: nested, source: "cwd" });
 });
 
-test("a working directory that holds the marker reports cwd", async () => {
+test("markers do not change the project root", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "kie-root-"));
-  await writeFile(path.join(root, "kie.config.json"), "{}", "utf8");
+  await mkdir(path.join(root, ".git"));
+  const nested = path.join(root, "notes");
+  await mkdir(nested, { recursive: true });
 
-  assert.deepEqual(resolveProject(root), { dir: root, source: "cwd" });
+  assert.deepEqual(resolveProject(nested), { dir: nested, source: "cwd" });
 });
 
-test("without a marker the working directory is used unchanged", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "kie-nomarker-"));
-  assert.deepEqual(resolveProject(root), { dir: root, source: "cwd" });
-});
-
-test("KIE_PROJECT_DIR overrides discovery", async () => {
+test("KIE_PROJECT_DIR redirects the project root", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "kie-env-"));
   const previous = process.env.KIE_PROJECT_DIR;
   process.env.KIE_PROJECT_DIR = root;

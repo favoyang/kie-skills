@@ -129,10 +129,9 @@ means editing `config/defaults.json` (or a project `kie.config.json`) deliberate
 
 ## Output layout
 
-The project root is discovered, not assumed: starting from the working directory, the
-CLI walks up to the nearest `.git` or `kie.config.json`. An agent that changes into a
-subdirectory still writes to the project root. `--project DIR` or `KIE_PROJECT_DIR`
-overrides the search.
+The project root is the current working directory. Nothing is inferred from the
+filesystem. Pass `--project DIR` or set `KIE_PROJECT_DIR` to write somewhere else; the
+CLI prints the resolved project in `plan`, `run`, and `info`.
 
 The output directory resolves as:
 

@@ -1,6 +1,5 @@
 import os from "node:os";
 import path from "node:path";
-import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
@@ -20,26 +19,16 @@ export const skillDefaultsPath = path.join(skillRoot, "config", "defaults.json")
 export const apiBase = "https://api.kie.ai";
 export const defaultOutDirName = "kie-output";
 
-const PROJECT_MARKERS = [".git", "kie.config.json"];
-
 /**
- * Walk up from the working directory to the nearest project marker. An agent may
- * invoke the CLI from a subdirectory; output must still land at the project root.
+ * The working directory is the project root unless explicitly redirected.
+ * Nothing is inferred from the filesystem; `--project` and KIE_PROJECT_DIR are
+ * the only overrides.
  */
 export function resolveProject(start = process.cwd()) {
   if (process.env.KIE_PROJECT_DIR) {
     return { dir: path.resolve(process.env.KIE_PROJECT_DIR), source: "env" };
   }
-  const resolved = path.resolve(start);
-  let dir = resolved;
-  for (;;) {
-    if (PROJECT_MARKERS.some((marker) => existsSync(path.join(dir, marker)))) {
-      return { dir, source: dir === resolved ? "cwd" : "marker" };
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) return { dir: resolved, source: "cwd" };
-    dir = parent;
-  }
+  return { dir: path.resolve(start), source: "cwd" };
 }
 
 export function projectDir() {
