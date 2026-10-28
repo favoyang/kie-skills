@@ -1,6 +1,6 @@
 import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
-import { apiBase, defaultCacheDir, loadConfig, resolveMetadataDir, resolveOutDir } from "./config.js";
+import { apiBase, defaultCacheDir, loadConfig, resolveMetadataDir, resolveOutDir, resolveProject } from "./config.js";
 import { KieError, downloadToFile, kieRequest } from "./http.js";
 import { loadCatalog, loadSchema, fetchBalance } from "./discovery.js";
 import { inputContract, parseCreditEstimate, validateInput } from "./schema.js";
@@ -166,11 +166,12 @@ export async function planRun({
   };
 }
 
-function metadataFor({ plan, taskId, createResponse, finalData, downloaded, balanceAfter, state, input = plan.input, uploads = [] }) {
+function metadataFor({ plan, taskId, createResponse, finalData, downloaded, balanceAfter, state, input = plan.input, uploads = [], project = null }) {
   const consumed = typeof finalData?.creditsConsumed === "number" ? finalData.creditsConsumed : null;
   return {
     timestamp: new Date().toISOString(),
     provider: "KIE.ai",
+    project,
     api_family: plan.verdict.family,
     mode: plan.model,
     state,
@@ -223,9 +224,11 @@ export async function runModel({
   log = console.log,
 } = {}) {
   const plan = await planRun({ model, input, apiKey, fetchFn, cacheDir, config, refresh, maxCredits, uploads, cwd });
+  const project = resolveProject(cwd);
   const outDir = outputRoot ? path.resolve(outputRoot) : resolveOutDir({ config: plan.config });
   const metadataDir = metadataRoot ? path.resolve(metadataRoot) : resolveMetadataDir({ outDir, config: plan.config });
 
+  log(`project    ${project.dir} (${project.source})`);
   log(`model      ${plan.model}`);
   log(`family     ${plan.verdict.family} (${plan.verdict.taskTypes.join(", ")})`);
   log(`route      ${plan.contract.route}`);
@@ -277,6 +280,7 @@ export async function runModel({
     state: "queued",
     input: effectiveInput,
     uploads: uploadRecords(uploadResults),
+    project,
   });
   await writeFile(metadataPath, JSON.stringify(queued, null, 2), "utf8");
 
@@ -309,6 +313,7 @@ export async function runModel({
     state,
     input: effectiveInput,
     uploads: uploadRecords(uploadResults),
+    project,
   });
   await writeFile(metadataPath, JSON.stringify(record, null, 2), "utf8");
   log(`metadata   ${metadataPath}`);

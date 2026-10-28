@@ -162,6 +162,8 @@ test("a successful run downloads to <out>/images/<model> and records real cost",
   assert.equal(record.credits_consumed, 6);
   assert.equal(record.cost_source, "recordInfo.creditsConsumed");
   assert.equal(record.api_family, "image");
+  assert.equal(record.project.dir, process.cwd());
+  assert.ok(["cwd", "marker", "env"].includes(record.project.source));
   assert.equal(record.request.model, MODEL);
   assert.equal(record.final_response.data.state, "success");
   assert.ok(record.discovery.catalog_fetched_at);

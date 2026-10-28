@@ -228,6 +228,7 @@ async function main(argv) {
         return 0;
       }
       console.log(`ok         ${plan.model} [${plan.verdict.family}]`);
+      console.log(`project    ${projectDir()} (${resolveProject().source})`);
       console.log(`route      ${plan.contract.route}`);
       console.log(`price      ${plan.entry.pricingDesc?.split("\n")[0] ?? "not advertised"}${plan.estimate === null ? "" : `  [max parsed: ${formatCredits(plan.estimate)}]`}`);
       console.log(`balance    ${formatCredits(plan.balance)}`);
