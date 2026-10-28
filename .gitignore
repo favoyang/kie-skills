@@ -1,0 +1,10 @@
+# Generated media and local state.
+kie-output/
+
+# Local environment files.
+.env
+.env.*
+
+# Runtime noise.
+node_modules/
+.DS_Store

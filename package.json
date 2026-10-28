@@ -1,0 +1,17 @@
+{
+  "name": "kie-skills",
+  "version": "0.1.0",
+  "description": "Agent skill and CLI for generating image, music, and speech with KIE task models",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "kie": "node scripts/cli.js",
+    "dashboard": "node scripts/cli.js dashboard",
+    "test": "node --test \"test/**/*.test.js\"",
+    "check": "npm test && node scripts/cli.js dashboard --check"
+  },
+  "license": "MIT"
+}

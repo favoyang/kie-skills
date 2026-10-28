@@ -1,0 +1,6 @@
+interface:
+  display_name: "KIE Skills"
+  short_description: "Generate and track KIE image, music, and speech runs"
+  default_prompt: "Use $kie-skills to find a KIE model, check its cost, and generate media into this project."
+policy:
+  allow_implicit_invocation: true

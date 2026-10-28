@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "allowedFamilies": ["image", "music", "speech"],
+  "familyTaskTypes": {
+    "image": ["Text to Image", "Image to Image", "Image Editing"],
+    "music": ["Text to Music", "Audio to Audio"],
+    "speech": ["Text to Speech"],
+    "video": ["Text to Video", "Image to Video", "Video to Video", "Video Editing", "Lip Sync", "Speech to Video"],
+    "chat": ["Chat"]
+  },
+  "minBalance": 20
+}
