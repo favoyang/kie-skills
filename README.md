@@ -75,6 +75,25 @@ kie-output/
   metadata/20261028-172545-a-red-ceramic-mug-<taskId>.metadata.json
 ```
 
+## Where output goes
+
+The CLI does not trust the working directory. It walks up from wherever it was invoked
+to the nearest `.git` or `kie.config.json`, and treats that as the project root. Running
+from `notes/` or `src/` still writes to `<project>/kie-output/`.
+
+Override with `--project DIR` (or `KIE_PROJECT_DIR`) when the project lives elsewhere,
+and `--out DIR` / `KIE_OUT_DIR` to move the output itself. Precedence:
+
+```
+--out DIR
+KIE_OUT_DIR
+outDir in kie.config.json
+<project>/kie-output/
+```
+
+`node scripts/cli.js info` prints the resolved project, its source (`cwd`, `marker`, or
+`env`), and the output directory — useful when a run lands somewhere unexpected.
+
 ## Safety defaults
 
 | Guard | Behavior |

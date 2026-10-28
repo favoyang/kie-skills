@@ -8,6 +8,7 @@ import {
   projectDir,
   resolveMetadataDir,
   resolveOutDir,
+  resolveProject,
   skillRoot,
 } from "./lib/config.js";
 import { fetchBalance, loadCatalog, loadSchema } from "./lib/discovery.js";
@@ -114,6 +115,7 @@ async function main(argv) {
   const target = positionals[1];
   const json = flags.json === true;
   const { cacheDir, refresh, maxCredits } = sharedFlags(flags);
+  if (flags.project) process.env.KIE_PROJECT_DIR = path.resolve(String(flags.project));
   const config = await loadConfig({ file: flags.config ? path.resolve(String(flags.config)) : projectConfigPath() });
 
   switch (command) {
@@ -312,6 +314,7 @@ async function main(argv) {
       const outDir = resolveOutDir({ config });
       const payload = {
         projectDir: projectDir(),
+        projectSource: resolveProject().source,
         skillRoot,
         cacheDir,
         outDir,
@@ -337,11 +340,15 @@ async function main(argv) {
   dashboard [--port 4173] [--host 127.0.0.1] [--out DIR] [--check]
   info     show resolved paths and policy
 
+global options:
+  --project DIR    treat DIR as the project root instead of discovering it
+  --out DIR        write this run under DIR instead of <project>/kie-output
+
 environment:
   KIE_API_KEY      required for every command that calls the API
   KIE_OUT_DIR      override the output directory
   KIE_CACHE_DIR    override the catalog/schema cache location
-  KIE_PROJECT_DIR  treat another folder as the project (default: current directory)
+  KIE_PROJECT_DIR  same as --project
 
 project config (optional, at <project>/kie.config.json):
   { "outDir": "kie-output", "allowedFamilies": ["image","music","speech"], "minBalance": 20 }`);

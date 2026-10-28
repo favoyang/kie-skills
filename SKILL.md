@@ -129,6 +129,11 @@ means editing `config/defaults.json` (or a project `kie.config.json`) deliberate
 
 ## Output layout
 
+The project root is discovered, not assumed: starting from the working directory, the
+CLI walks up to the nearest `.git` or `kie.config.json`. An agent that changes into a
+subdirectory still writes to the project root. `--project DIR` or `KIE_PROJECT_DIR`
+overrides the search.
+
 The output directory resolves as:
 
 1. `--out DIR`

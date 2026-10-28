@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { assertPolicyShape, loadConfig, projectDir, resolveMetadataDir, resolveOutDir } from "../scripts/lib/config.js";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { assertPolicyShape, loadConfig, projectDir, resolveMetadataDir, resolveOutDir, resolveProject } from "../scripts/lib/config.js";
 
 async function withProject(configFile, run) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "kie-config-"));
@@ -79,4 +79,37 @@ test("policy shape validation rejects families missing from the task map", () =>
     () => assertPolicyShape({ allowedFamilies: ["image"], familyTaskTypes: { image: [] }, minBalance: -1 }, "test"),
     /non-negative/,
   );
+});
+
+test("the project root is discovered by walking up to a marker", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "kie-root-"));
+  await mkdir(path.join(root, ".git"));
+  const nested = path.join(root, "notes", "deep");
+  await mkdir(nested, { recursive: true });
+
+  assert.deepEqual(resolveProject(nested), { dir: root, source: "marker" });
+});
+
+test("a working directory that holds the marker reports cwd", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "kie-root-"));
+  await writeFile(path.join(root, "kie.config.json"), "{}", "utf8");
+
+  assert.deepEqual(resolveProject(root), { dir: root, source: "cwd" });
+});
+
+test("without a marker the working directory is used unchanged", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "kie-nomarker-"));
+  assert.deepEqual(resolveProject(root), { dir: root, source: "cwd" });
+});
+
+test("KIE_PROJECT_DIR overrides discovery", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "kie-env-"));
+  const previous = process.env.KIE_PROJECT_DIR;
+  process.env.KIE_PROJECT_DIR = root;
+  try {
+    assert.deepEqual(resolveProject("/"), { dir: root, source: "env" });
+  } finally {
+    if (previous === undefined) delete process.env.KIE_PROJECT_DIR;
+    else process.env.KIE_PROJECT_DIR = previous;
+  }
 });
