@@ -79,6 +79,19 @@ function apiKeyFromEnv() {
   return key;
 }
 
+/** Repeatable: --upload image_url=./a.png --upload video_url=./b.mp4 */
+export function uploadMap(value) {
+  if (value === undefined || value === true) return null;
+  const entries = Array.isArray(value) ? value : [value];
+  const mapping = {};
+  for (const entry of entries) {
+    const index = entry.indexOf("=");
+    if (index === -1) throw new KieError(`--upload expects field=path, got: ${entry}`);
+    mapping[entry.slice(0, index)] = entry.slice(index + 1);
+  }
+  return mapping;
+}
+
 function printModels(rows, { json }) {
   if (json) {
     console.log(JSON.stringify(rows, null, 2));
