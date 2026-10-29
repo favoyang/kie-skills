@@ -304,12 +304,13 @@ const STYLES = `
     main[data-view="detail"] .feed-toggle > summary { padding-left: 0; padding-right: 0; }
 
     /* Lightbox */
-    dialog.lightbox { border: 0; padding: 0; background: transparent; max-width: 96vw; max-height: 94vh; }
+    dialog.lightbox { border: 0; padding: 0; background: transparent; max-width: 96vw; max-height: 94vh; overflow: visible; }
     dialog.lightbox::backdrop { background: rgb(10 12 16 / 82%); }
     .lightbox-inner { position: relative; background: #0f1115; border-radius: 10px; padding: 14px; display: flex; align-items: center; justify-content: center; }
     .lightbox-inner img, .lightbox-inner video { max-width: min(90vw, 1300px); max-height: 82vh; border: 0; border-radius: 6px; background: #000; }
     .lightbox-inner audio { width: min(80vw, 720px); }
-    .lightbox-close { position: absolute; top: -12px; right: -12px; width: 30px; height: 30px; border-radius: 50%; border: 0; background: #fff; color: #20242a; font-size: 18px; line-height: 1; cursor: pointer; }
+    .lightbox-close { position: absolute; top: 10px; right: 10px; z-index: 2; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 0; background: rgb(255 255 255 / 92%); color: #20242a; font-size: 17px; line-height: 1; cursor: pointer; box-shadow: 0 1px 4px rgb(0 0 0 / 35%); }
+    .lightbox-close:hover { background: #fff; }
 
     @media (max-width: 760px) {
       .topbar { display: block; }
@@ -490,6 +491,11 @@ export async function renderPage(items, context = {}) {
 export async function renderDetailPage(item, context = {}) {
   const article = await renderItem(item, 0, context);
   const body = `
+    <section class="topbar">
+      <div class="title-row">
+        <h1>${escapeHtml(PAGE_TITLE)}</h1>
+      </div>
+    </section>
     <nav class="crumbs" aria-label="Breadcrumb">
       <a href="/">← Generations</a>
       <span>/</span>

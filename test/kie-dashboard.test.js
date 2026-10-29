@@ -221,6 +221,8 @@ test("the detail route renders a breadcrumb and the full block", async () => {
     assert.match(detail, /← Generations/);
     assert.match(detail, /a mug/);
     assert.match(detail, /<main data-view="detail">/);
+    assert.match(detail, /<h1>KIE Generations<\/h1>/);
+    assert.match(detail, /← Generations/);
 
     const missing = await fetch(`${base}/item?task=nope`);
     assert.equal(missing.status, 404);
