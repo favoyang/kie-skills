@@ -206,7 +206,10 @@ node scripts/cli.js dashboard
 
 It reads `<out>/metadata/*.metadata.json` and serves media from `<out>/`. Each run
 shows its prompt, inputs, credits, elapsed seconds, assets, and a link to its metadata
-file. `--check` renders once and exits without binding a port, which suits CI.
+file. The page polls for new runs and updates itself within a few seconds, so a
+generation started elsewhere appears without a reload. A navbar toggle switches between
+list view (details, prompts, metadata) and a thumbnail gallery. `--check` renders once
+and exits without binding a port, which suits CI.
 `--host 0.0.0.0` exposes it on the LAN; there is no authentication, so only do that on
 a trusted network.
 

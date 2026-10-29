@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
+import path from "node:path";
 import { assetKind, assetUrl, contentType, readFeedItems, resolveAssetPath } from "./feed.js";
 
 const usdPerKieCredit = 0.005;
@@ -60,6 +61,28 @@ function mediaLengthSeconds(assets) {
 
 function hasTimedMedia(assets) {
   return assets.some((asset) => asset.path && ["audio", "video"].includes(assetKind(asset.path)));
+}
+
+function firstVisual(assets) {
+  for (const asset of assets) {
+    if (!asset.path) continue;
+    const kind = assetKind(asset.path);
+    if (kind === "image" || kind === "video" || kind === "audio") return { asset, kind };
+  }
+  return null;
+}
+
+function renderTile(item, domId) {
+  const visual = firstVisual(item.downloaded);
+  const details = `<button type="button" class="to-details" data-target="${escapeHtml(domId)}">Details</button>`;
+  if (!visual) {
+    return `<div class="tile tile-empty"><span class="tile-kind">${escapeHtml(item.family)}</span>${details}</div>`;
+  }
+  const url = assetUrl(visual.asset.path);
+  const inner = visual.kind === "image"
+    ? `<img src="${url}" alt="" loading="lazy">`
+    : `<span class="tile-kind">${escapeHtml(visual.kind)}</span>`;
+  return `<div class="tile"><a href="${url}" target="_blank" rel="noreferrer">${inner}</a>${details}</div>`;
 }
 
 function renderAssetCaption(asset, label) {
@@ -123,8 +146,10 @@ export async function renderItem(item, index = 0, context = {}) {
   const lengthTile = showLength
     ? `<div><span>Song Length</span><strong>${escapeHtml(formatLength(lengthSeconds))}</strong></div>`
     : "";
+  const domId = `item-${index}`;
   return `
-    <article class="feed-item">
+    <article class="feed-item" id="${domId}">
+      ${renderTile(item, domId)}
       <details class="feed-toggle"${isExpanded ? " open" : ""}>
         <summary>
           <span class="summary-main">
@@ -180,8 +205,12 @@ export async function renderItem(item, index = 0, context = {}) {
   `;
 }
 
+export async function renderItems(items, context = {}) {
+  return (await Promise.all(items.map((item, index) => renderItem(item, index, context)))).join("");
+}
+
 export async function renderPage(items, context = {}) {
-  const renderedItems = await Promise.all(items.map((item, index) => renderItem(item, index, context)));
+  const renderedItems = await renderItems(items, context);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -193,15 +222,24 @@ export async function renderPage(items, context = {}) {
     * { box-sizing: border-box; }
     html, body { margin: 0; max-width: 100%; overflow-x: hidden; }
     main { width: min(1120px, 100%); margin: 0 auto; padding: 28px 18px 48px; }
-    .topbar { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 20px; min-width: 0; }
+    .topbar { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 20px; min-width: 0; flex-wrap: wrap; }
     h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: 0; }
     h2 { font-size: 18px; margin: 0; letter-spacing: 0; }
     h2 span { font-weight: 500; color: #59616d; }
     h3 { font-size: 12px; text-transform: uppercase; color: #68717d; margin: 0 0 8px; letter-spacing: .04em; }
     p { line-height: 1.5; overflow-wrap: anywhere; }
     .muted { color: #68717d; margin: 0; }
+    .live { display: inline-flex; align-items: center; gap: 5px; }
+    .live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #137333; transition: background .2s; }
+    .live.pulse::before { background: #2962ff; }
+    .live.off::before { background: #b42318; }
+    .view-toggle { display: inline-flex; border: 1px solid #dfe3e8; border-radius: 7px; overflow: hidden; background: #fff; }
+    .view-toggle button { appearance: none; border: 0; background: transparent; color: #4b5563; font: inherit; font-size: 13px; padding: 7px 14px; cursor: pointer; }
+    .view-toggle button + button { border-left: 1px solid #dfe3e8; }
+    .view-toggle button.active { background: #20242a; color: #fff; }
     .feed { display: grid; gap: 16px; min-width: 0; }
     .feed-item { min-width: 0; background: #fff; border: 1px solid #dfe3e8; border-radius: 8px; box-shadow: 0 1px 2px rgb(22 29 37 / 5%); overflow: hidden; }
+    .tile { display: none; }
     .feed-toggle { margin: 0; color: inherit; }
     .feed-toggle > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; cursor: pointer; min-width: 0; list-style-position: inside; }
     .feed-toggle > summary::marker { color: #68717d; }
@@ -239,8 +277,26 @@ export async function renderPage(items, context = {}) {
     details { margin-top: 14px; color: #4b5563; }
     .feed-toggle, .metadata-toggle { margin-top: 0; }
     .metadata-toggle { margin-top: 14px; }
+    .empty { padding: 40px 0; text-align: center; }
+
+    /* Gallery view */
+    main[data-view="gallery"] .feed { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+    main[data-view="gallery"] .feed-item { display: flex; flex-direction: column; }
+    main[data-view="gallery"] .tile { display: flex; flex-direction: column; position: relative; background: #f4f6f8; }
+    main[data-view="gallery"] .tile > a { display: block; }
+    main[data-view="gallery"] .tile img { width: 100%; height: 190px; object-fit: cover; border: 0; border-radius: 0; }
+    main[data-view="gallery"] .tile-kind { display: flex; align-items: center; justify-content: center; width: 100%; height: 190px; color: #68717d; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+    main[data-view="gallery"] .to-details { position: absolute; right: 8px; bottom: 8px; appearance: none; border: 1px solid #dfe3e8; background: rgb(255 255 255 / 92%); color: #344054; font: inherit; font-size: 11px; padding: 4px 8px; border-radius: 999px; cursor: pointer; }
+    main[data-view="gallery"] .feed-toggle > summary { padding: 10px 12px; pointer-events: none; list-style: none; align-items: flex-start; }
+    main[data-view="gallery"] .feed-toggle > summary::marker { content: ""; }
+    main[data-view="gallery"] .summary-title { font-size: 13px; }
+    main[data-view="gallery"] .summary-subtitle { font-size: 11px; }
+    main[data-view="gallery"] .summary-meta { font-size: 11px; margin-top: 2px; }
+    main[data-view="gallery"] .feed-body { display: none; }
+
     @media (max-width: 760px) {
       .topbar { display: block; }
+      .view-toggle { margin-top: 12px; }
       .feed-toggle > summary { align-items: flex-start; }
       .summary-meta { align-items: flex-end; flex-direction: column; gap: 6px; }
       .meta-grid { grid-template-columns: 1fr; }
@@ -248,73 +304,120 @@ export async function renderPage(items, context = {}) {
   </style>
 </head>
 <body>
-  <main>
+  <main data-view="list">
     <section class="topbar">
       <div>
         <h1>${escapeHtml(PAGE_TITLE)}</h1>
-        <p class="muted">${items.length} item${items.length === 1 ? "" : "s"} · newest first</p>
+        <p class="muted"><span id="count">${items.length}</span> item${items.length === 1 ? "" : "s"} · newest first · <span id="live" class="live">live</span></p>
+      </div>
+      <div class="view-toggle" role="group" aria-label="View mode">
+        <button type="button" data-view="list" class="active">List</button>
+        <button type="button" data-view="gallery">Gallery</button>
       </div>
     </section>
-    <section class="feed">
-      ${items.length > 0 ? renderedItems.join("") : "<p class=\"muted\">No metadata files found yet. Run a generation first.</p>"}
+    <section class="feed" id="feed">
+      ${items.length > 0 ? renderedItems : "<p class=\"muted empty\">No metadata files found yet. Run a generation first.</p>"}
     </section>
   </main>
   <script>
     (() => {
+      const main = document.querySelector("main");
+      const feed = document.getElementById("feed");
+      const count = document.getElementById("count");
+      const live = document.getElementById("live");
+      const buttons = [...document.querySelectorAll(".view-toggle button")];
+
+      const applyView = (view) => {
+        main.dataset.view = view;
+        for (const button of buttons) button.classList.toggle("active", button.dataset.view === view);
+        try { localStorage.setItem("kie-view", view); } catch {}
+      };
+      let view = "list";
+      try { view = localStorage.getItem("kie-view") || "list"; } catch {}
+      if (view !== "gallery") view = "list";
+      applyView(view);
+      for (const button of buttons) button.addEventListener("click", () => applyView(button.dataset.view));
+
       const resetMedia = (element) => {
         element.pause();
-        if (element.readyState > 0) {
-          try { element.currentTime = 0; } catch {}
-        }
+        if (element.readyState > 0) { try { element.currentTime = 0; } catch {} }
       };
       const bindMedia = () => {
         document.querySelectorAll("audio, video").forEach((element) => {
           resetMedia(element);
-          element.addEventListener("loadedmetadata", () => {
-            try { element.currentTime = 0; } catch {}
-          }, { once: true });
+          element.addEventListener("loadedmetadata", () => { try { element.currentTime = 0; } catch {} }, { once: true });
           element.addEventListener("play", () => {
-            document.querySelectorAll("audio, video").forEach((other) => {
-              if (other !== element) other.pause();
-            });
+            document.querySelectorAll("audio, video").forEach((other) => { if (other !== element) other.pause(); });
           });
         });
       };
+
       const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-      const relativeUnits = [
-        ["year", 31536000],
-        ["month", 2592000],
-        ["week", 604800],
-        ["day", 86400],
-        ["hour", 3600],
-        ["minute", 60],
-        ["second", 1],
-      ];
+      const relativeUnits = [["year",31536000],["month",2592000],["week",604800],["day",86400],["hour",3600],["minute",60],["second",1]];
       const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
-      const localFormatter = new Intl.DateTimeFormat(undefined, {
-        dateStyle: "medium",
-        timeStyle: "medium",
-        timeZone: browserTimeZone,
-      });
+      const localFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium", timeZone: browserTimeZone });
       const formatSince = (date) => {
         const diffSeconds = Math.round((date.getTime() - Date.now()) / 1000);
         const absSeconds = Math.abs(diffSeconds);
-        const [unit, secondsPerUnit] = relativeUnits.find(([, seconds]) => absSeconds >= seconds) || ["second", 1];
-        return relativeTime.format(Math.round(diffSeconds / secondsPerUnit), unit);
+        const [unit, perUnit] = relativeUnits.find(([, seconds]) => absSeconds >= seconds) || ["second", 1];
+        return relativeTime.format(Math.round(diffSeconds / perUnit), unit);
       };
       const updateTimes = () => {
         document.querySelectorAll(".local-time").forEach((element) => {
           const date = new Date(element.dateTime);
-          if (Number.isNaN(date.getTime())) return;
-          element.textContent = localFormatter.format(date) + " " + browserTimeZone;
+          if (!Number.isNaN(date.getTime())) element.textContent = localFormatter.format(date) + " " + browserTimeZone;
         });
         document.querySelectorAll(".time-since").forEach((element) => {
           const raw = element.getAttribute("data-timestamp");
           const date = raw ? new Date(raw) : null;
-          if (!date || Number.isNaN(date.getTime())) return;
-          element.textContent = formatSince(date);
+          if (date && !Number.isNaN(date.getTime())) element.textContent = formatSince(date);
         });
       };
+
+      feed.addEventListener("click", (event) => {
+        const button = event.target.closest(".to-details");
+        if (!button) return;
+        event.preventDefault();
+        event.stopPropagation();
+        applyView("list");
+        const target = document.getElementById(button.dataset.target);
+        if (!target) return;
+        const details = target.querySelector("details");
+        if (details) details.open = true;
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+
+      let version = null;
+      let timer = null;
+      const flash = () => {
+        live.classList.add("pulse");
+        clearTimeout(timer);
+        timer = setTimeout(() => live.classList.remove("pulse"), 1200);
+      };
+      const check = async () => {
+        if (document.hidden) return;
+        try {
+          const response = await fetch("/api/version", { cache: "no-store" });
+          if (!response.ok) throw new Error("version " + response.status);
+          const next = await response.text();
+          if (version === null) { version = next; return; }
+          if (next === version) return;
+          version = next;
+          const partial = await fetch("/partial", { cache: "no-store" });
+          if (!partial.ok) throw new Error("partial " + partial.status);
+          feed.innerHTML = await partial.text();
+          const total = next.split(":")[0];
+          if (count) count.textContent = total;
+          updateTimes();
+          bindMedia();
+          flash();
+        } catch {
+          live.classList.add("off");
+        }
+      };
+      setInterval(check, 3000);
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
+
       window.addEventListener("pageshow", bindMedia);
       window.addEventListener("pageshow", updateTimes);
       document.addEventListener("DOMContentLoaded", bindMedia);
@@ -356,6 +459,27 @@ async function serveAsset(rawPath, response, context) {
   }).pipe(response);
 }
 
+/** Cheap fingerprint of the metadata directory: file count plus newest mtime. */
+export async function metadataVersion(metadataDir) {
+  let names = [];
+  try {
+    names = await readdir(metadataDir);
+  } catch {
+    return "0:0";
+  }
+  const files = names.filter((name) => name.endsWith(".json"));
+  let latest = 0;
+  for (const name of files) {
+    try {
+      const info = await stat(path.join(metadataDir, name));
+      if (info.mtimeMs > latest) latest = info.mtimeMs;
+    } catch {
+      // file removed mid-scan
+    }
+  }
+  return `${files.length}:${Math.round(latest)}`;
+}
+
 export async function checkDashboard(context) {
   const items = await readFeedItems(context);
   const html = await renderPage(items, context);
@@ -370,13 +494,24 @@ export function createDashboardServer(context) {
       const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
       if (url.pathname === "/") {
         const items = await readFeedItems(context);
-        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
         response.end(await renderPage(items, context));
+        return;
+      }
+      if (url.pathname === "/partial") {
+        const items = await readFeedItems(context);
+        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+        response.end(items.length > 0 ? await renderItems(items, context) : "");
+        return;
+      }
+      if (url.pathname === "/api/version") {
+        response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+        response.end(await metadataVersion(context.metadataDir));
         return;
       }
       if (url.pathname === "/api/assets") {
         const items = await readFeedItems(context);
-        response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+        response.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
         response.end(JSON.stringify(items, null, 2));
         return;
       }

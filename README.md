@@ -136,8 +136,9 @@ node scripts/cli.js dashboard
 ```
 
 A read-only page over the output directory: prompts, inputs, credits, elapsed time,
-and playable media. Binds to localhost; pass `--host 0.0.0.0` only on a trusted
-network.
+and playable media. It watches the metadata folder and shows new runs within a few
+seconds, and the navbar toggles between list and gallery views. Binds to localhost; pass
+`--host 0.0.0.0` only on a trusted network.
 
 ## Known limits
 

@@ -1,6 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { formatElapsed, renderPage } from "../scripts/lib/dashboard.js";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import {
+  createDashboardServer,
+  formatElapsed,
+  metadataVersion,
+  renderItems,
+  renderPage,
+} from "../scripts/lib/dashboard.js";
+import path from "node:path";
 
 function feedItem(index) {
   return {
@@ -97,6 +106,80 @@ test("elapsed time is shown in seconds, never milliseconds", () => {
 
 test("an empty feed explains what to do instead of showing a blank page", async () => {
   const html = await renderPage([]);
-  assert.match(html, /0 items/);
+  assert.match(html, /id="count">0</);
   assert.match(html, /Run a generation first/);
+});
+
+test("the page offers a list/gallery toggle and starts in list view", async () => {
+  const html = await renderPage([feedItem(1)]);
+  assert.match(html, /<main data-view="list">/);
+  assert.match(html, /data-view="list"/);
+  assert.match(html, /data-view="gallery"/);
+  assert.match(html, /id="feed"/);
+  assert.match(html, /id="live"/);
+});
+
+test("gallery tiles use the first visual asset", async () => {
+  const html = await renderPage([{
+    ...feedItem(1),
+    family: "image",
+    downloaded: [{ path: "kie-output/images/a.png" }, { path: "kie-output/images/b.png" }],
+  }]);
+  assert.match(html, /class="tile"><a href="\/asset\?path=kie-output%2Fimages%2Fa\.png"/);
+  assert.match(html, /class="to-details" data-target="item-0"/);
+});
+
+test("runs without a visual asset still get a tile placeholder", async () => {
+  const html = await renderPage([{ ...feedItem(1), downloaded: [], textAssets: [{ path: "kie-output/text/a.txt" }] }]);
+  assert.match(html, /class="tile tile-empty"/);
+  assert.match(html, /class="tile-kind">music</);
+});
+
+test("renderItems returns bare articles for partial refreshes", async () => {
+  const html = await renderItems([feedItem(1), feedItem(2)]);
+  assert.equal((html.match(/<article/g) ?? []).length, 2);
+  assert.doesNotMatch(html, /<html/);
+});
+
+test("the version fingerprint changes when a run is added", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "kie-version-"));
+  assert.equal(await metadataVersion(dir), "0:0");
+
+  const record = { timestamp: "2026-06-26T00:00:00.000Z", request: { model: "m", input: {} }, final_response: { data: { state: "success" } } };
+  await writeFile(path.join(dir, "a.metadata.json"), JSON.stringify(record), "utf8");
+  const first = await metadataVersion(dir);
+  assert.match(first, /^1:\d+$/);
+
+  await writeFile(path.join(dir, "b.metadata.json"), JSON.stringify(record), "utf8");
+  assert.match(await metadataVersion(dir), /^2:\d+$/);
+});
+
+test("the server serves the page, a version fingerprint, and a partial feed", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "kie-serve-"));
+  const metadataDir = path.join(dir, "metadata");
+  await writeFile(path.join(dir, "placeholder"), "", "utf8").catch(() => {});
+  await import("node:fs/promises").then((fs) => fs.mkdir(metadataDir, { recursive: true }));
+  await writeFile(
+    path.join(metadataDir, "a.metadata.json"),
+    JSON.stringify({ timestamp: "2026-06-26T00:00:00.000Z", request: { model: "m", input: {} }, final_response: { data: { state: "success" } } }),
+    "utf8",
+  );
+
+  const server = createDashboardServer({ projectDir: dir, outDir: dir, metadataDir });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const page = await (await fetch(`${base}/`)).text();
+    assert.match(page, /KIE Generations/);
+
+    const version = await (await fetch(`${base}/api/version`)).text();
+    assert.match(version, /^1:\d+$/);
+    assert.equal(await (await fetch(`${base}/api/version`)).text(), version);
+
+    const partial = await (await fetch(`${base}/partial`)).text();
+    assert.match(partial, /<article/);
+    assert.doesNotMatch(partial, /<html/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
