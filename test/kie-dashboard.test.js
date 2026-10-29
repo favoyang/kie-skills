@@ -106,8 +106,8 @@ test("elapsed time is shown in seconds, never milliseconds", () => {
 
 test("an empty feed explains what to do instead of showing a blank page", async () => {
   const html = await renderPage([]);
-  assert.match(html, /id="count">0</);
-  assert.match(html, /Run a generation first/);
+  assert.match(html, /id="count"[^>]*>0</);
+  assert.match(html, /No generations yet/);
 });
 
 test("the page offers a list/gallery toggle and starts in list view", async () => {
@@ -115,6 +115,8 @@ test("the page offers a list/gallery toggle and starts in list view", async () =
   assert.match(html, /<main data-view="list">/);
   assert.match(html, /data-view="list"/);
   assert.match(html, /data-view="gallery"/);
+  assert.doesNotMatch(html, /newest first/);
+  assert.match(html, /<h1>KIE Generations<\/h1>\s*<span id="live"/);
   assert.match(html, /id="feed"/);
   assert.match(html, /id="live"/);
 });
@@ -125,8 +127,18 @@ test("gallery tiles use the first visual asset", async () => {
     family: "image",
     downloaded: [{ path: "kie-output/images/a.png" }, { path: "kie-output/images/b.png" }],
   }]);
-  assert.match(html, /class="tile"><a href="\/asset\?path=kie-output%2Fimages%2Fa\.png"/);
-  assert.match(html, /class="to-details" data-target="item-0"/);
+  assert.match(html, /class="tile"><a class="tile-open" data-kind="image" href="\/asset\?path=kie-output%2Fimages%2Fa\.png"/);
+  assert.match(html, /class="to-details" href="\/item\?task=task-1"/);
+});
+
+test("video tiles render a first frame instead of a label", async () => {
+  const html = await renderPage([{
+    ...feedItem(1),
+    family: "music",
+    downloaded: [{ path: "kie-output/video/a.mp4" }],
+  }]);
+  assert.match(html, /<video src="\/asset\?path=kie-output%2Fvideo%2Fa\.mp4#t=0\.1" muted playsinline preload="metadata">/);
+  assert.match(html, /data-kind="video"/);
 });
 
 test("runs without a visual asset still get a tile placeholder", async () => {
@@ -179,6 +191,39 @@ test("the server serves the page, a version fingerprint, and a partial feed", as
     const partial = await (await fetch(`${base}/partial`)).text();
     assert.match(partial, /<article/);
     assert.doesNotMatch(partial, /<html/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("the detail route renders a breadcrumb and the full block", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "kie-detail-"));
+  const metadataDir = path.join(dir, "metadata");
+  await (await import("node:fs/promises")).mkdir(metadataDir, { recursive: true });
+  await writeFile(
+    path.join(metadataDir, "a.metadata.json"),
+    JSON.stringify({
+      timestamp: "2026-06-26T00:00:00.000Z",
+      api_family: "image",
+      mode: "gpt-image-2-text-to-image",
+      request: { model: "gpt-image-2-text-to-image", input: { prompt: "a mug" } },
+      final_response: { data: { taskId: "task-1", state: "success" } },
+    }),
+    "utf8",
+  );
+
+  const server = createDashboardServer({ projectDir: dir, outDir: dir, metadataDir });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const detail = await (await fetch(`${base}/item?task=task-1`)).text();
+    assert.match(detail, /class="crumbs"/);
+    assert.match(detail, /← Generations/);
+    assert.match(detail, /a mug/);
+    assert.match(detail, /<main data-view="detail">/);
+
+    const missing = await fetch(`${base}/item?task=nope`);
+    assert.equal(missing.status, 404);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

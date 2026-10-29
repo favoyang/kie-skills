@@ -72,17 +72,23 @@ function firstVisual(assets) {
   return null;
 }
 
-function renderTile(item, domId) {
+function renderTile(item) {
   const visual = firstVisual(item.downloaded);
-  const details = `<button type="button" class="to-details" data-target="${escapeHtml(domId)}">Details</button>`;
+  const details = `<a class="to-details" href="/item?task=${encodeURIComponent(item.taskId)}">Details</a>`;
   if (!visual) {
     return `<div class="tile tile-empty"><span class="tile-kind">${escapeHtml(item.family)}</span>${details}</div>`;
   }
   const url = assetUrl(visual.asset.path);
-  const inner = visual.kind === "image"
-    ? `<img src="${url}" alt="" loading="lazy">`
-    : `<span class="tile-kind">${escapeHtml(visual.kind)}</span>`;
-  return `<div class="tile"><a href="${url}" target="_blank" rel="noreferrer">${inner}</a>${details}</div>`;
+  let inner;
+  if (visual.kind === "image") {
+    inner = `<img src="${url}" alt="" loading="lazy">`;
+  } else if (visual.kind === "video") {
+    // #t=0.1 makes browsers render the first frame as the tile image.
+    inner = `<video src="${url}#t=0.1" muted playsinline preload="metadata"></video>`;
+  } else {
+    inner = `<span class="tile-kind">${escapeHtml(visual.kind)}</span>`;
+  }
+  return `<div class="tile"><a class="tile-open" data-kind="${escapeHtml(visual.kind)}" href="${url}">${inner}</a>${details}</div>`;
 }
 
 function renderAssetCaption(asset, label) {
@@ -149,7 +155,7 @@ export async function renderItem(item, index = 0, context = {}) {
   const domId = `item-${index}`;
   return `
     <article class="feed-item" id="${domId}">
-      ${renderTile(item, domId)}
+      ${renderTile(item)}
       <details class="feed-toggle"${isExpanded ? " open" : ""}>
         <summary>
           <span class="summary-main">
@@ -209,34 +215,29 @@ export async function renderItems(items, context = {}) {
   return (await Promise.all(items.map((item, index) => renderItem(item, index, context)))).join("");
 }
 
-export async function renderPage(items, context = {}) {
-  const renderedItems = await renderItems(items, context);
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(PAGE_TITLE)}</title>
-  <style>
+const STYLES = `
     :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f6f7f9; color: #20242a; }
     * { box-sizing: border-box; }
     html, body { margin: 0; max-width: 100%; overflow-x: hidden; }
     main { width: min(1120px, 100%); margin: 0 auto; padding: 28px 18px 48px; }
-    .topbar { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 20px; min-width: 0; flex-wrap: wrap; }
-    h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: 0; }
-    h2 { font-size: 18px; margin: 0; letter-spacing: 0; }
-    h2 span { font-weight: 500; color: #59616d; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; min-width: 0; flex-wrap: wrap; }
+    .title-row { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+    h1 { font-size: 28px; margin: 0; letter-spacing: 0; }
     h3 { font-size: 12px; text-transform: uppercase; color: #68717d; margin: 0 0 8px; letter-spacing: .04em; }
     p { line-height: 1.5; overflow-wrap: anywhere; }
     .muted { color: #68717d; margin: 0; }
-    .live { display: inline-flex; align-items: center; gap: 5px; }
-    .live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #137333; transition: background .2s; }
-    .live.pulse::before { background: #2962ff; }
-    .live.off::before { background: #b42318; }
+    .live { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #137333; text-transform: uppercase; letter-spacing: .08em; }
+    .live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .live.pulse { color: #2962ff; }
+    .live.off { color: #b42318; }
     .view-toggle { display: inline-flex; border: 1px solid #dfe3e8; border-radius: 7px; overflow: hidden; background: #fff; }
     .view-toggle button { appearance: none; border: 0; background: transparent; color: #4b5563; font: inherit; font-size: 13px; padding: 7px 14px; cursor: pointer; }
     .view-toggle button + button { border-left: 1px solid #dfe3e8; }
     .view-toggle button.active { background: #20242a; color: #fff; }
+    .crumbs { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #68717d; margin-bottom: 16px; }
+    .crumbs a { color: #344054; text-decoration: none; border-bottom: 1px solid #c9ced6; }
+    .crumbs a:hover { border-color: #20242a; }
     .feed { display: grid; gap: 16px; min-width: 0; }
     .feed-item { min-width: 0; background: #fff; border: 1px solid #dfe3e8; border-radius: 8px; box-shadow: 0 1px 2px rgb(22 29 37 / 5%); overflow: hidden; }
     .tile { display: none; }
@@ -284,9 +285,9 @@ export async function renderPage(items, context = {}) {
     main[data-view="gallery"] .feed-item { display: flex; flex-direction: column; }
     main[data-view="gallery"] .tile { display: flex; flex-direction: column; position: relative; background: #f4f6f8; }
     main[data-view="gallery"] .tile > a { display: block; color: inherit; text-decoration: none; }
-    main[data-view="gallery"] .tile img { width: 100%; height: 190px; object-fit: cover; border: 0; border-radius: 0; }
+    main[data-view="gallery"] .tile img, main[data-view="gallery"] .tile video { width: 100%; height: 190px; object-fit: cover; border: 0; border-radius: 0; pointer-events: none; }
     main[data-view="gallery"] .tile-kind { display: flex; align-items: center; justify-content: center; width: 100%; height: 190px; color: #68717d; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; background: repeating-linear-gradient(45deg, #f4f6f8, #f4f6f8 10px, #eef1f4 10px, #eef1f4 20px); }
-    main[data-view="gallery"] .to-details { position: absolute; right: 8px; bottom: 8px; appearance: none; border: 1px solid #dfe3e8; background: rgb(255 255 255 / 92%); color: #344054; font: inherit; font-size: 11px; padding: 4px 8px; border-radius: 999px; cursor: pointer; }
+    main[data-view="gallery"] .to-details { position: absolute; right: 8px; bottom: 8px; appearance: none; border: 1px solid #dfe3e8; background: rgb(255 255 255 / 92%); color: #344054; font-size: 11px; padding: 4px 8px; border-radius: 999px; text-decoration: none; }
     main[data-view="gallery"] .to-details:hover { border-color: #20242a; }
     main[data-view="gallery"] .feed-toggle > summary { display: block; padding: 9px 11px 11px; pointer-events: none; list-style: none; }
     main[data-view="gallery"] .feed-toggle > summary::marker { content: ""; }
@@ -298,6 +299,18 @@ export async function renderPage(items, context = {}) {
     main[data-view="gallery"] .state { padding: 3px 8px; font-size: 10px; }
     main[data-view="gallery"] .feed-body { display: none; }
 
+    /* Detail page */
+    main[data-view="detail"] .feed-item { border: 0; box-shadow: none; background: transparent; }
+    main[data-view="detail"] .feed-toggle > summary { padding-left: 0; padding-right: 0; }
+
+    /* Lightbox */
+    dialog.lightbox { border: 0; padding: 0; background: transparent; max-width: 96vw; max-height: 94vh; }
+    dialog.lightbox::backdrop { background: rgb(10 12 16 / 82%); }
+    .lightbox-inner { position: relative; background: #0f1115; border-radius: 10px; padding: 14px; display: flex; align-items: center; justify-content: center; }
+    .lightbox-inner img, .lightbox-inner video { max-width: min(90vw, 1300px); max-height: 82vh; border: 0; border-radius: 6px; background: #000; }
+    .lightbox-inner audio { width: min(80vw, 720px); }
+    .lightbox-close { position: absolute; top: -12px; right: -12px; width: 30px; height: 30px; border-radius: 50%; border: 0; background: #fff; color: #20242a; font-size: 18px; line-height: 1; cursor: pointer; }
+
     @media (max-width: 760px) {
       .topbar { display: block; }
       .view-toggle { margin-top: 12px; }
@@ -305,31 +318,17 @@ export async function renderPage(items, context = {}) {
       .summary-meta { align-items: flex-end; flex-direction: column; gap: 6px; }
       .meta-grid { grid-template-columns: 1fr; }
     }
-  </style>
-</head>
-<body>
-  <main data-view="list">
-    <section class="topbar">
-      <div>
-        <h1>${escapeHtml(PAGE_TITLE)}</h1>
-        <p class="muted"><span id="count">${items.length}</span> item${items.length === 1 ? "" : "s"} · newest first · <span id="live" class="live">live</span></p>
-      </div>
-      <div class="view-toggle" role="group" aria-label="View mode">
-        <button type="button" data-view="list" class="active">List</button>
-        <button type="button" data-view="gallery">Gallery</button>
-      </div>
-    </section>
-    <section class="feed" id="feed">
-      ${items.length > 0 ? renderedItems : "<p class=\"muted empty\">No metadata files found yet. Run a generation first.</p>"}
-    </section>
-  </main>
-  <script>
+`;
+
+const CREATE_SCRIPT = `
     (() => {
       const main = document.querySelector("main");
       const feed = document.getElementById("feed");
       const count = document.getElementById("count");
       const live = document.getElementById("live");
       const buttons = [...document.querySelectorAll(".view-toggle button")];
+      const dialog = document.getElementById("lightbox");
+      const dialogBody = document.getElementById("lightbox-body");
 
       const applyView = (view) => {
         main.dataset.view = view;
@@ -341,6 +340,34 @@ export async function renderPage(items, context = {}) {
       if (view !== "gallery") view = "list";
       applyView(view);
       for (const button of buttons) button.addEventListener("click", () => applyView(button.dataset.view));
+
+      const closeLightbox = () => {
+        dialogBody.innerHTML = "";
+        dialog.close();
+      };
+      dialog.addEventListener("click", (event) => { if (event.target === dialog) closeLightbox(); });
+      dialog.addEventListener("close", () => { dialogBody.innerHTML = ""; });
+      document.querySelector(".lightbox-close").addEventListener("click", closeLightbox);
+
+      const openLightbox = (kind, src) => {
+        if (kind === "image") {
+          dialogBody.innerHTML = '<img src="' + src + '" alt="">';
+        } else if (kind === "video") {
+          dialogBody.innerHTML = '<video src="' + src + '" controls autoplay playsinline></video>';
+        } else if (kind === "audio") {
+          dialogBody.innerHTML = '<audio src="' + src + '" controls autoplay></audio>';
+        } else {
+          return;
+        }
+        dialog.showModal();
+      };
+
+      feed.addEventListener("click", (event) => {
+        const link = event.target.closest("a.tile-open");
+        if (!link) return;
+        event.preventDefault();
+        openLightbox(link.dataset.kind, link.getAttribute("href"));
+      });
 
       const resetMedia = (element) => {
         element.pause();
@@ -378,19 +405,6 @@ export async function renderPage(items, context = {}) {
         });
       };
 
-      feed.addEventListener("click", (event) => {
-        const button = event.target.closest(".to-details");
-        if (!button) return;
-        event.preventDefault();
-        event.stopPropagation();
-        applyView("list");
-        const target = document.getElementById(button.dataset.target);
-        if (!target) return;
-        const details = target.querySelector("details");
-        if (details) details.open = true;
-        target.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-
       let version = null;
       let timer = null;
       const flash = () => {
@@ -399,7 +413,7 @@ export async function renderPage(items, context = {}) {
         timer = setTimeout(() => live.classList.remove("pulse"), 1200);
       };
       const check = async () => {
-        if (document.hidden) return;
+        if (document.hidden || dialog.open) return;
         try {
           const response = await fetch("/api/version", { cache: "no-store" });
           if (!response.ok) throw new Error("version " + response.status);
@@ -410,8 +424,7 @@ export async function renderPage(items, context = {}) {
           const partial = await fetch("/partial", { cache: "no-store" });
           if (!partial.ok) throw new Error("partial " + partial.status);
           feed.innerHTML = await partial.text();
-          const total = next.split(":")[0];
-          if (count) count.textContent = total;
+          if (count) count.textContent = next.split(":")[0];
           updateTimes();
           bindMedia();
           flash();
@@ -428,9 +441,62 @@ export async function renderPage(items, context = {}) {
       document.addEventListener("DOMContentLoaded", updateTimes);
       window.setInterval(updateTimes, 60000);
     })();
-  </script>
+`;
+
+function renderDocument({ view, body, script = "", crumbs = "" }) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(PAGE_TITLE)}</title>
+  <style>${STYLES}</style>
+</head>
+<body>
+  <main data-view="${escapeHtml(view)}">
+    ${body}
+  </main>
+  <dialog class="lightbox" id="lightbox">
+    <div class="lightbox-inner">
+      <button type="button" class="lightbox-close" aria-label="Close">×</button>
+      <div id="lightbox-body"></div>
+    </div>
+  </dialog>
+  ${script ? `<script>${script}</script>` : ""}
 </body>
 </html>`;
+}
+
+export async function renderPage(items, context = {}) {
+  const renderedItems = await renderItems(items, context);
+  const body = `
+    <section class="topbar">
+      <div class="title-row">
+        <h1>${escapeHtml(PAGE_TITLE)}</h1>
+        <span id="live" class="live">live</span>
+        <span id="count" class="sr-only">${items.length}</span>
+      </div>
+      <div class="view-toggle" role="group" aria-label="View mode">
+        <button type="button" data-view="list" class="active">List</button>
+        <button type="button" data-view="gallery">Gallery</button>
+      </div>
+    </section>
+    <section class="feed" id="feed">
+      ${items.length > 0 ? renderedItems : "<p class=\"muted empty\">No generations yet.</p>"}
+    </section>`;
+  return renderDocument({ view: "list", body, script: CREATE_SCRIPT });
+}
+
+export async function renderDetailPage(item, context = {}) {
+  const article = await renderItem(item, 0, context);
+  const body = `
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/">← Generations</a>
+      <span>/</span>
+      <span>${escapeHtml(item.family)} · ${escapeHtml(item.mode)}</span>
+    </nav>
+    <section class="feed">${article}</section>`;
+  return renderDocument({ view: "detail", body, script: "" });
 }
 
 async function serveAsset(rawPath, response, context) {
@@ -502,6 +568,19 @@ export function createDashboardServer(context) {
         response.end(await renderPage(items, context));
         return;
       }
+      if (url.pathname === "/item") {
+        const task = url.searchParams.get("task") ?? "";
+        const items = await readFeedItems(context);
+        const item = items.find((candidate) => candidate.taskId === task);
+        if (!item) {
+          response.writeHead(404, { "Content-Type": "text/html; charset=utf-8" });
+          response.end(renderNotFound());
+          return;
+        }
+        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+        response.end(await renderDetailPage(item, context));
+        return;
+      }
       if (url.pathname === "/partial") {
         const items = await readFeedItems(context);
         response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
@@ -529,5 +608,12 @@ export function createDashboardServer(context) {
       response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
       response.end(error instanceof Error ? error.message : String(error));
     }
+  });
+}
+
+function renderNotFound() {
+  return renderDocument({
+    view: "detail",
+    body: `<nav class="crumbs"><a href="/">← Generations</a></nav><p class="muted">That generation is no longer available.</p>`,
   });
 }
