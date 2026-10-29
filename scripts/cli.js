@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import path from "node:path";
+import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import {
   defaultCacheDir,
   loadConfig,
@@ -370,7 +372,20 @@ project config (optional, at <project>/kie.config.json):
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+/**
+ * Path-aware entry-point check. String-concatenating `file://${argv[1]}` fails on
+ * Windows, where argv[1] is `C:\...` but import.meta.url is `file:///C:/...`.
+ */
+export function isEntryPoint(metaUrl, argv1) {
+  if (!argv1) return false;
+  try {
+    return metaUrl === pathToFileURL(realpathSync(argv1)).href;
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint(import.meta.url, process.argv[1])) {
   try {
     process.exitCode = await main(process.argv.slice(2));
   } catch (error) {

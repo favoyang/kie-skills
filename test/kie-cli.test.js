@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { parseArgs, uploadMap } from "../scripts/cli.js";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { isEntryPoint, parseArgs, uploadMap } from "../scripts/cli.js";
 
 const cliPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts", "cli.js");
 
@@ -67,4 +67,12 @@ test("plan and run fail on a missing key before touching uploads", () => {
     assert.equal(error.status, 2);
     assert.match(String(error.stderr), /KIE_API_KEY is not set/);
   }
+});
+
+test("the entry-point guard is path-aware instead of string-concatenated", () => {
+  const here = fileURLToPath(import.meta.url);
+  assert.equal(isEntryPoint(pathToFileURL(here).href, here), true);
+  assert.equal(isEntryPoint(import.meta.url, here), true);
+  assert.equal(isEntryPoint(import.meta.url, path.join(path.dirname(here), "other.js")), false);
+  assert.equal(isEntryPoint(import.meta.url, undefined), false);
 });
