@@ -1,17 +1,21 @@
 #!/usr/bin/env node
 import path from "node:path";
+import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   defaultCacheDir,
+  defaultStoreDir,
   loadConfig,
   projectConfigPath,
   projectDir,
+  projectIdentity,
   resolveMetadataDir,
   resolveOutDir,
   resolveProject,
   skillRoot,
+  storeMetadataDir,
 } from "./lib/config.js";
 import { fetchBalance, loadCatalog, loadSchema } from "./lib/discovery.js";
 import { inputContract } from "./lib/schema.js";
@@ -21,6 +25,8 @@ import { readSpend, summarizeSpend } from "./lib/spend.js";
 import { checkDashboard, createDashboardServer } from "./lib/dashboard.js";
 import { formatCredits } from "./lib/format.js";
 import { KieError } from "./lib/http.js";
+import { importRuns } from "./lib/import.js";
+import { installService, serviceStatus, uninstallService } from "./lib/service.js";
 
 export function parseArgs(argv) {
   const positionals = [];
@@ -122,6 +128,42 @@ function sharedFlags(flags) {
     refresh: flags.refresh === true,
     maxCredits: flags["max-credits"] !== undefined ? Number(flags["max-credits"]) : null,
   };
+}
+
+async function probeDashboard(healthUrl) {
+  try {
+    const response = await fetch(healthUrl, { signal: AbortSignal.timeout(1500) });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.app === "kie-dashboard" ? body : null;
+  } catch {
+    return null;
+  }
+}
+
+async function waitForDashboard(base, attempts = 25) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const health = await probeDashboard(`${base}/api/health`);
+    if (health) return health;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  return null;
+}
+
+async function openUrl(url) {
+  const [command, args] = process.platform === "darwin"
+    ? ["open", [url]]
+    : process.platform === "win32"
+      ? ["cmd", ["/c", "start", "", url]]
+      : ["xdg-open", [url]];
+  await new Promise((resolve) => {
+    execFile(command, args, () => resolve());
+  });
+}
+
+function dashboardUrl(host, port) {
+  const shown = host === "0.0.0.0" ? "localhost" : host;
+  return `http://${shown}:${port}`;
 }
 
 async function main(argv) {
@@ -260,7 +302,14 @@ async function main(argv) {
         outputRoot: flags.out ? String(flags.out) : null,
         uploads: uploadMap(flags.upload),
       });
-      if (json) console.log(JSON.stringify(result, null, 2));
+      if (json) {
+        console.log(JSON.stringify(result, null, 2));
+        return 0;
+      }
+      const port = Number(process.env.PORT ?? 4173);
+      if (await probeDashboard(`http://127.0.0.1:${port}/api/health`)) {
+        console.log(`dashboard  http://127.0.0.1:${port}/item?task=${result.taskId}`);
+      }
       return 0;
     }
 
@@ -300,11 +349,17 @@ async function main(argv) {
     }
 
     case "dashboard": {
-      const outDir = resolveOutDir({ flagValue: flags.out ? String(flags.out) : null, config });
+      // A global view: the store, not whatever project happens to be the cwd.
+      const storeDir = flags.out
+        ? path.resolve(String(flags.out))
+        : process.env.KIE_OUT_DIR
+          ? path.resolve(process.env.KIE_OUT_DIR)
+          : defaultStoreDir();
       const context = {
-        projectDir: projectDir(),
-        outDir,
-        metadataDir: resolveMetadataDir({ outDir, config }),
+        storeDir,
+        projectDir: storeDir,
+        outDir: storeDir,
+        metadataDir: storeMetadataDir(storeDir),
       };
       if (flags.check) {
         const count = await checkDashboard(context);
@@ -313,24 +368,100 @@ async function main(argv) {
       }
       const port = flags.port ? Number(flags.port) : Number(process.env.PORT ?? 4173);
       const host = flags.host ? String(flags.host) : "127.0.0.1";
+      const url = dashboardUrl(host, port);
+
+      const already = await probeDashboard(`http://127.0.0.1:${port}/api/health`);
+      if (already) {
+        console.log(`KIE dashboard already running: ${url}`);
+        console.log(`store: ${already.storeDir} (${already.runs} run(s))`);
+        if (flags.open) await openUrl(url);
+        return 0;
+      }
+
       const server = createDashboardServer(context);
-      await new Promise((resolve, reject) => {
-        server.once("error", reject);
-        server.listen(port, host, resolve);
-      });
-      console.log(`KIE dashboard: http://${host === "0.0.0.0" ? "127.0.0.1" : host}:${port}`);
-      console.log(`metadata: ${context.metadataDir}`);
+      try {
+        await new Promise((resolve, reject) => {
+          server.once("error", reject);
+          server.listen(port, host, resolve);
+        });
+      } catch (error) {
+        if (error?.code === "EADDRINUSE") {
+          throw new KieError(`port ${port} is already in use by something that is not a KIE dashboard`);
+        }
+        throw error;
+      }
+      console.log(`KIE dashboard: ${url}`);
+      console.log(`store: ${context.storeDir}`);
       if (host === "0.0.0.0") console.log("note: bound to all interfaces; the dashboard has no authentication");
+      if (flags.open) await openUrl(url);
       process.on("SIGINT", () => server.close(() => process.exit(0)));
       await new Promise(() => {});
       return 0;
     }
 
+    case "import": {
+      const sources = positionals.slice(1);
+      if (sources.length === 0) throw new KieError("usage: kie import <dir> [dir...]");
+      const storeDir = flags.store ? path.resolve(String(flags.store)) : defaultStoreDir();
+      const summary = await importRuns({ sources, storeDir, log: json ? () => {} : console.log });
+      if (json) {
+        console.log(JSON.stringify(summary, null, 2));
+        return 0;
+      }
+      console.log("");
+      console.log(`imported   ${summary.imported}`);
+      if (summary.skipped > 0) console.log(`skipped    ${summary.skipped} (already in the store)`);
+      if (summary.broken > 0) console.log(`broken     ${summary.broken}`);
+      if (summary.missing.length > 0) console.log(`missing    ${summary.missing.length} asset(s)`);
+      console.log(`store      ${storeDir}`);
+      return 0;
+    }
+
+    case "service": {
+      const action = positionals[1] ?? "status";
+      const cliPath = fileURLToPath(import.meta.url);
+      const host = flags.host ? String(flags.host) : "0.0.0.0";
+      const port = flags.port ? Number(flags.port) : 4173;
+      if (action === "install") {
+        await installService({ cliPath, host, port });
+        const health = await waitForDashboard(dashboardUrl(host, port));
+        if (health) {
+          console.log(`running    ${dashboardUrl(host, port)} (${health.runs} run(s), v${health.version})`);
+        } else {
+          console.log("warning: the service was installed but did not answer yet; check the service log");
+        }
+        return 0;
+      }
+      if (action === "uninstall") {
+        await uninstallService({ cliPath });
+        return 0;
+      }
+      if (action === "status") {
+        const status = await serviceStatus();
+        const health = await probeDashboard(`http://127.0.0.1:${port}/api/health`);
+        if (json) {
+          console.log(JSON.stringify({ ...status, running: Boolean(health), health }, null, 2));
+          return 0;
+        }
+        console.log(`platform   ${status.platform}`);
+        console.log(`installed  ${status.installed ? "yes" : "no"}`);
+        console.log(`supervisor ${status.detail}`);
+        console.log(`running    ${health ? "yes" : "no"}`);
+        if (health) console.log(`url        ${dashboardUrl(host, port)} (${health.runs} run(s), v${health.version})`);
+        return 0;
+      }
+      throw new KieError("usage: kie service install|uninstall|status");
+    }
+
     case "info": {
       const outDir = resolveOutDir({ config });
+      const identity = projectIdentity();
       const payload = {
         projectDir: projectDir(),
         projectSource: resolveProject().source,
+        projectName: identity.name,
+        gitCommonDir: identity.git_common_dir,
+        storeDir: defaultStoreDir(),
         skillRoot,
         cacheDir,
         outDir,
@@ -353,15 +484,18 @@ async function main(argv) {
   plan     <model> --input '<json>' [--upload FIELD=PATH] [--max-credits N] [--out DIR] [--json]
   run      <model> --input '<json>' [--upload FIELD=PATH] [--max-credits N] [--timeout s] [--interval s] [--out DIR] [--json]
   spend    [--today|--month] [--metadata-dir DIR] [--out DIR] [--json]
-  dashboard [--port 4173] [--host 127.0.0.1] [--out DIR] [--check]
+  dashboard [--port 4173] [--host 127.0.0.1] [--out DIR] [--check] [--open]
+  import   <dir> [dir...] [--store DIR] [--json]
+  service  install|uninstall|status [--host 0.0.0.0] [--port 4173]
   info     show resolved paths and policy
 
 global options:
   --project DIR    run as if DIR were the working directory
-  --out DIR        write this run under DIR instead of <project>/kie-output
+  --out DIR        write this run under DIR instead of the shared store
 
 environment:
   KIE_API_KEY      required for every command that calls the API
+  KIE_STORE_DIR    override the per-user artifact store
   KIE_OUT_DIR      override the output directory
   KIE_CACHE_DIR    override the catalog/schema cache location
   KIE_PROJECT_DIR  same as --project

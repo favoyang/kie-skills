@@ -67,31 +67,52 @@ node scripts/cli.js run gpt-image-2-text-to-image \
   --input '{"prompt":"a red ceramic mug on a light oak table","resolution":"1K","aspect_ratio":"1:1"}'
 ```
 
-Each run downloads its result and writes a metadata record next to it:
+Each run downloads its result into a shared per-user store and writes a metadata
+record next to it:
 
 ```
-kie-output/
+~/Library/Application Support/kie/        # macOS
+%LOCALAPPDATA%\kie\                        # Windows
+~/.local/share/kie/                       # Linux
   images/gpt-image-2-text-to-image/20261028-172545-a-red-ceramic-mug-01.png
   metadata/20261028-172545-a-red-ceramic-mug-<taskId>.metadata.json
 ```
 
 ## Where output goes
 
-The project root is the directory you run from. There is no filesystem sniffing: run
-`kie` from `notes/` and output goes to `notes/kie-output/`.
+One store per user, shared by every project. Runs used to land in a project-local
+`kie-output/`, which breaks under git worktrees: that directory is git-ignored, cannot
+be merged back, and disappears with the worktree.
 
-Point it elsewhere with `--project DIR` or `KIE_PROJECT_DIR`. `plan`, `run`, and `info`
-print the resolved project, so this is never a guess. Precedence:
+Precedence:
 
 ```
 --out DIR
 KIE_OUT_DIR
 outDir in kie.config.json
-<project>/kie-output/
+KIE_STORE_DIR
+platform data directory
 ```
 
-`node scripts/cli.js info` prints the resolved project, its source (`cwd`, `marker`, or
-`env`), and the output directory — useful when a run lands somewhere unexpected.
+`--out` and a project `outDir` stay available for a one-off local run, but a run written
+outside the store does not show up in the dashboard.
+
+`node scripts/cli.js info` prints the resolved project, its source (`cwd` or `env`), the
+repository name and git common dir, and the store location — useful when a run lands
+somewhere unexpected.
+
+Every record stores the invoking directory, the git common dir, and the repository
+name. Worktrees of one repository share a common dir, so they report as one project
+instead of one per checkout.
+
+### Migrating old output
+
+```sh
+node scripts/cli.js import ~/projects/old-project/kie-output
+```
+
+Copies the metadata and referenced assets into the store and rewrites the asset paths.
+Runs are matched by task id, so importing the same tree twice changes nothing.
 
 ## Safety defaults
 
@@ -135,10 +156,20 @@ node scripts/cli.js dashboard
 # KIE dashboard: http://127.0.0.1:4173
 ```
 
-A read-only page over the output directory: prompts, inputs, credits, elapsed time,
-and playable media. It watches the metadata folder and shows new runs within a few
-seconds, and the navbar toggles between list and gallery views. Binds to localhost; pass
-`--host 0.0.0.0` only on a trusted network.
+A read-only page over the store: prompts, inputs, credits, elapsed time, and playable
+media. It watches the metadata folder and shows new runs within a few seconds, filters
+by repository and family, and the navbar toggles between list and gallery views.
+
+```sh
+node scripts/cli.js dashboard --open          # reuse or start, then open the browser
+node scripts/cli.js service install --host 0.0.0.0 --port 4173
+node scripts/cli.js service status
+```
+
+`dashboard` is idempotent: if one already answers on the port it prints that URL and
+exits. `service install` makes it resident through launchd on macOS or Task Scheduler
+on Windows, so it survives logout and restarts after a crash. Binds to localhost by
+default; `--host 0.0.0.0` exposes it on a trusted network, with no authentication.
 
 ## Known limits
 
@@ -152,7 +183,7 @@ seconds, and the navbar toggles between list and gallery views. Binds to localho
 ## Development
 
 ```sh
-npm test        # 88 tests, no network or credentials required
+npm test        # 125 tests, no network or credentials required
 npm run check   # tests plus a dashboard render check
 ```
 
