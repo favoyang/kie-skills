@@ -148,20 +148,17 @@ export function defaultCacheDir() {
 }
 
 /**
- * The store is the default so every project feeds one dashboard. A project can
- * still opt back into local output with `outDir` in kie.config.json, KIE_OUT_DIR,
- * or `--out`; that is the escape hatch, not the normal path.
+ * Every run goes to the store. `--out` is the only redirect, and it is per
+ * command: a sticky setting in a project file is exactly how a run ends up
+ * somewhere the dashboard cannot see.
  */
-export function resolveOutDir({ flagValue, config } = {}) {
+export function resolveOutDir({ flagValue } = {}) {
   if (flagValue) return path.resolve(flagValue);
-  if (process.env.KIE_OUT_DIR) return path.resolve(process.env.KIE_OUT_DIR);
-  if (config?.outDir) return path.resolve(projectDir(), config.outDir);
   return defaultStoreDir();
 }
 
-export function resolveMetadataDir({ outDir, config } = {}) {
-  if (config?.metadataDir) return path.resolve(projectDir(), config.metadataDir);
-  return path.join(outDir ?? resolveOutDir({ config }), "metadata");
+export function resolveMetadataDir({ outDir } = {}) {
+  return path.join(outDir ?? resolveOutDir(), "metadata");
 }
 
 async function readJson(file, { optional = false } = {}) {
@@ -202,11 +199,24 @@ export function assertPolicyShape(policy, source) {
  * Precedence: bundled defaults, then the project's optional kie.config.json.
  * A project may narrow or widen allowedFamilies; it cannot remove the map itself.
  */
+const RETIRED_KEYS = {
+  outDir: "runs always go to the shared store; pass --out for a one-off run",
+  metadataDir: "metadata always lives beside the store; pass --out for a one-off run",
+};
+
 export async function loadConfig({ file = projectConfigPath() } = {}) {
   const defaults = assertPolicyShape(await readJson(skillDefaultsPath), skillDefaultsPath);
   const projectConfig = await readJson(file, { optional: true });
   if (!projectConfig) {
-    return { ...defaults, outDir: undefined, metadataDir: undefined, sources: { defaults: skillDefaultsPath, project: null } };
+    return { ...defaults, sources: { defaults: skillDefaultsPath, project: null } };
+  }
+
+  // Silently ignoring a stale key would write runs somewhere the config does
+  // not say. Refuse instead, so the fix is obvious.
+  for (const [key, reason] of Object.entries(RETIRED_KEYS)) {
+    if (key in projectConfig) {
+      throw new Error(`config at ${file}: ${key} is no longer supported; ${reason}`);
+    }
   }
 
   const merged = {

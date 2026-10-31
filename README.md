@@ -1,5 +1,7 @@
 # kie-skills
 
+**English** | [简体中文](README.zh-CN.md)
+
 An agent skill and small CLI for generating images, music, and speech through
 [KIE](https://kie.ai) task models — with model discovery, schema validation, credit
 accounting, and local artifact records built in.
@@ -87,15 +89,15 @@ be merged back, and disappears with the worktree.
 Precedence:
 
 ```
---out DIR
-KIE_OUT_DIR
-outDir in kie.config.json
+--out DIR            (this command only)
 KIE_STORE_DIR
 platform data directory
 ```
 
-`--out` and a project `outDir` stay available for a one-off local run, but a run written
-outside the store does not show up in the dashboard.
+`--out` is the only redirect, and it applies to one command. There is deliberately no
+project-level output setting: a sticky path in `kie.config.json` is how a run ends up
+somewhere the dashboard cannot see. A run written outside the store does not show up in
+the dashboard.
 
 `node scripts/cli.js info` prints the resolved project, its source (`cwd` or `env`), the
 repository name and git common dir, and the store location — useful when a run lands
@@ -183,7 +185,7 @@ default; `--host 0.0.0.0` exposes it on a trusted network, with no authenticatio
 ## Development
 
 ```sh
-npm test        # 125 tests, no network or credentials required
+npm test        # 127 tests, no network or credentials required
 npm run check   # tests plus a dashboard render check
 ```
 

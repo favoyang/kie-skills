@@ -276,7 +276,7 @@ async function main(argv) {
       console.log(`route      ${plan.contract.route}`);
       console.log(`price      ${plan.entry.pricingDesc?.split("\n")[0] ?? "not advertised"}${plan.estimate === null ? "" : `  [max parsed: ${formatCredits(plan.estimate)}]`}`);
       console.log(`balance    ${formatCredits(plan.balance)}`);
-      console.log(`output     ${resolveOutDir({ flagValue: flags.out ? String(flags.out) : null, config })}`);
+      console.log(`output     ${resolveOutDir({ flagValue: flags.out ? String(flags.out) : null })}`);
       for (const upload of plan.uploads) {
         console.log(`upload     ${upload.field} <- ${upload.sourceRelative} (${upload.bytes} bytes, ${upload.kind})`);
       }
@@ -321,10 +321,10 @@ async function main(argv) {
         : flags.month
           ? Date.parse(`${new Date().toISOString().slice(0, 7)}-01T00:00:00Z`)
           : null;
-      const outDir = resolveOutDir({ flagValue: flags.out ? String(flags.out) : null, config });
+      const outDir = resolveOutDir({ flagValue: flags.out ? String(flags.out) : null });
       const directories = flags["metadata-dir"]
         ? [path.resolve(String(flags["metadata-dir"]))]
-        : [resolveMetadataDir({ outDir, config })];
+        : [resolveMetadataDir({ outDir })];
       const rows = await readSpend({ directories, since });
       const summary = summarizeSpend(rows);
       if (json) {
@@ -350,11 +350,7 @@ async function main(argv) {
 
     case "dashboard": {
       // A global view: the store, not whatever project happens to be the cwd.
-      const storeDir = flags.out
-        ? path.resolve(String(flags.out))
-        : process.env.KIE_OUT_DIR
-          ? path.resolve(process.env.KIE_OUT_DIR)
-          : defaultStoreDir();
+      const storeDir = flags.out ? path.resolve(String(flags.out)) : defaultStoreDir();
       const context = {
         storeDir,
         projectDir: storeDir,
@@ -454,7 +450,7 @@ async function main(argv) {
     }
 
     case "info": {
-      const outDir = resolveOutDir({ config });
+      const outDir = resolveOutDir();
       const identity = projectIdentity();
       const payload = {
         projectDir: projectDir(),
@@ -465,7 +461,7 @@ async function main(argv) {
         skillRoot,
         cacheDir,
         outDir,
-        metadataDir: resolveMetadataDir({ outDir, config }),
+        metadataDir: resolveMetadataDir({ outDir }),
         allowedFamilies: config.allowedFamilies,
         minBalance: config.minBalance ?? null,
         configSources: config.sources,
@@ -491,12 +487,11 @@ async function main(argv) {
 
 global options:
   --project DIR    run as if DIR were the working directory
-  --out DIR        write this run under DIR instead of the shared store
+  --out DIR        write this run under DIR instead of the shared store (one-off)
 
 environment:
   KIE_API_KEY      required for every command that calls the API
   KIE_STORE_DIR    override the per-user artifact store
-  KIE_OUT_DIR      override the output directory
   KIE_CACHE_DIR    override the catalog/schema cache location
   KIE_PROJECT_DIR  same as --project
 

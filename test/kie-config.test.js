@@ -116,32 +116,33 @@ test("outside a repository the project key is the working directory", async () =
   assert.equal(identity.name, path.basename(dir));
 });
 
-test("a project config overrides outDir and narrows families without losing the task map", async () => {
-  await withProject({ outDir: "outputs", allowedFamilies: ["image"] }, async (dir) => {
+test("a project config narrows families without losing the task map", async () => {
+  await withProject({ allowedFamilies: ["image"] }, async (dir, store) => {
     const config = await loadConfig();
-    assert.equal(resolveOutDir({ config }), path.join(dir, "outputs"));
+    assert.equal(resolveOutDir(), store);
     assert.deepEqual(config.allowedFamilies, ["image"]);
     assert.ok(config.familyTaskTypes.video.includes("Text to Video"));
     assert.ok(config.sources.project.endsWith("kie.config.json"));
   });
 });
 
-test("explicit flags beat environment, which beats project config", async () => {
-  await withProject({ outDir: "from-config" }, async (dir) => {
-    const config = await loadConfig();
-    assert.equal(resolveOutDir({ config }), path.join(dir, "from-config"));
-
-    process.env.KIE_OUT_DIR = path.join(dir, "from-env");
-    assert.equal(resolveOutDir({ config }), path.join(dir, "from-env"));
-
-    assert.equal(resolveOutDir({ flagValue: path.join(dir, "from-flag"), config }), path.join(dir, "from-flag"));
+test("a project outDir is refused instead of silently redirecting runs", async () => {
+  await withProject({ outDir: "outputs" }, async () => {
+    await assert.rejects(() => loadConfig(), /outDir is no longer supported/);
   });
 });
 
-test("metadataDir can be pinned independently of outDir", async () => {
-  await withProject({ outDir: "outputs", metadataDir: "records" }, async (dir) => {
-    const config = await loadConfig();
-    assert.equal(resolveMetadataDir({ outDir: path.join(dir, "outputs"), config }), path.join(dir, "records"));
+test("a project metadataDir is refused for the same reason", async () => {
+  await withProject({ metadataDir: "records" }, async () => {
+    await assert.rejects(() => loadConfig(), /metadataDir is no longer supported/);
+  });
+});
+
+test("--out is the only redirect, and it wins over the store", async () => {
+  await withProject(null, async (dir, store) => {
+    assert.equal(resolveOutDir(), store);
+    assert.equal(resolveOutDir({ flagValue: path.join(dir, "one-off") }), path.join(dir, "one-off"));
+    assert.equal(resolveMetadataDir({ outDir: path.join(dir, "one-off") }), path.join(dir, "one-off", "metadata"));
   });
 });
 

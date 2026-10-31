@@ -53,7 +53,7 @@ test("an unknown command exits non-zero", () => {
 
 test("the info command runs standalone and reports resolved paths", () => {
   const store = path.join(os.tmpdir(), `kie-info-store-${process.pid}`);
-  const info = JSON.parse(runCli(["info"], { env: { ...process.env, KIE_STORE_DIR: store, KIE_OUT_DIR: "" } }));
+  const info = JSON.parse(runCli(["info"], { env: { ...process.env, KIE_STORE_DIR: store } }));
   assert.ok(info.projectDir);
   assert.ok(["cwd", "marker", "env"].includes(info.projectSource));
   assert.equal(info.outDir, store);

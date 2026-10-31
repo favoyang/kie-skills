@@ -225,8 +225,8 @@ export async function runModel({
 } = {}) {
   const plan = await planRun({ model, input, apiKey, fetchFn, cacheDir, config, refresh, maxCredits, uploads, cwd });
   const project = projectIdentity(cwd);
-  const outDir = outputRoot ? path.resolve(outputRoot) : resolveOutDir({ config: plan.config });
-  const metadataDir = metadataRoot ? path.resolve(metadataRoot) : resolveMetadataDir({ outDir, config: plan.config });
+  const outDir = outputRoot ? path.resolve(outputRoot) : resolveOutDir();
+  const metadataDir = metadataRoot ? path.resolve(metadataRoot) : resolveMetadataDir({ outDir });
 
   log(`project    ${project.dir} (${project.source})${project.name ? ` [${project.name}]` : ""}`);
   log(`model      ${plan.model}`);

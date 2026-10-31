@@ -138,11 +138,9 @@ and disappears with the worktree.
 
 The store resolves as:
 
-1. `--out DIR`
-2. `KIE_OUT_DIR`
-3. `outDir` in `<project>/kie.config.json`
-4. `KIE_STORE_DIR`
-5. the platform data directory: `~/Library/Application Support/kie` on macOS,
+1. `--out DIR`, for this command only
+2. `KIE_STORE_DIR`
+3. the platform data directory: `~/Library/Application Support/kie` on macOS,
    `%LOCALAPPDATA%\kie` on Windows, `~/.local/share/kie` on Linux
 
 ```
@@ -153,9 +151,10 @@ The store resolves as:
   metadata/<stamp>-<slug>-<taskId>.metadata.json
 ```
 
-`--out` and a project `outDir` remain as escape hatches for a one-off local run. They
-are not the normal path: a run written outside the store does not appear in the
-dashboard.
+`--out` is the only redirect, and it applies to one command. There is deliberately no
+project-level output setting: a sticky path in `kie.config.json` is how a run ends up
+somewhere the dashboard cannot see. A run written outside the store does not appear in
+the dashboard.
 
 Every record also carries a `project` block: the invoking directory, its git common
 dir, the repository name, and the working directory. The git common dir is the
@@ -181,8 +180,8 @@ Optional, at `<project>/kie.config.json`:
 }
 ```
 
-`outDir` and `metadataDir` are accepted here as overrides that pull a project back out
-of the store. Leave them out unless a project really needs its own directory.
+`outDir` and `metadataDir` are **refused**. A config that still contains either one
+fails with an explanation instead of silently writing runs somewhere else.
 
 Omitted keys fall back to `config/defaults.json`. `familyTaskTypes` merges per family,
 so a project can extend the map without restating it.
