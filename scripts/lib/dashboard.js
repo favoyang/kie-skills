@@ -1,11 +1,69 @@
 import { createServer } from "node:http";
-import { createReadStream } from "node:fs";
+import { createReadStream, readFileSync } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
+import { defaultStoreDir, skillRoot, storeMetadataDir } from "./config.js";
 import { assetKind, assetUrl, contentType, readFeedItems, resolveAssetPath } from "./feed.js";
 
 const usdPerKieCredit = 0.005;
 const PAGE_TITLE = "KIE Generations";
+
+let dashboardVersion = "0.0.0";
+try {
+  dashboardVersion = JSON.parse(readFileSync(path.join(skillRoot, "package.json"), "utf8")).version ?? dashboardVersion;
+} catch {
+  // A missing package.json only costs the version string.
+}
+
+/** One store feeds the dashboard; every other path is derived from it. */
+function pathsFor(context = {}) {
+  const storeDir = context.storeDir ?? context.outDir ?? defaultStoreDir();
+  return {
+    storeDir,
+    projectDir: context.projectDir ?? storeDir,
+    outDir: context.outDir ?? storeDir,
+    metadataDir: context.metadataDir ?? storeMetadataDir(storeDir),
+  };
+}
+
+export function filterItems(items, { project = "", family = "" } = {}) {
+  return items.filter((item) =>
+    (!project || item.project?.key === project || item.project?.name === project)
+    && (!family || item.family === family));
+}
+
+export function projectGroups(items) {
+  const groups = new Map();
+  for (const item of items) {
+    const key = item.project?.key ?? "";
+    const name = item.project?.name || (key ? path.basename(key) : "unknown");
+    const group = groups.get(key) ?? { key, name, runs: 0, credits: 0 };
+    group.runs += 1;
+    if (typeof item.creditsConsumed === "number") group.credits += item.creditsConsumed;
+    groups.set(key, group);
+  }
+  return [...groups.values()].sort((left, right) => right.runs - left.runs || left.name.localeCompare(right.name));
+}
+
+function renderFilters({ projects, families, active }) {
+  const projectOptions = [["", `All projects (${projects.length})`], ...projects.map((group) => [group.key, `${group.name} (${group.runs})`])];
+  const familyOptions = [["", "All families"], ...families.map((family) => [family, family])];
+  const options = (entries, selected) => entries
+    .map(([value, label]) => `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(label)}</option>`)
+    .join("");
+  return `
+      <form class="filter-form" method="get" action="/">
+        <label><span>Project</span><select name="project" onchange="this.form.submit()">${options(projectOptions, active.project ?? "")}</select></label>
+        <label><span>Family</span><select name="family" onchange="this.form.submit()">${options(familyOptions, active.family ?? "")}</select></label>
+        <noscript><button type="submit">Filter</button></noscript>
+      </form>`;
+}
+
+function renderSummary(items, active) {
+  const credits = items.reduce((sum, item) => sum + (typeof item.creditsConsumed === "number" ? item.creditsConsumed : 0), 0);
+  const scope = active.project || active.family ? "filtered" : "all projects";
+  return `<p class="feed-summary" id="summary"><strong>${items.length}</strong> run(s) · <strong>${credits}</strong> credits · $${(credits * usdPerKieCredit).toFixed(3)} <span class="muted">${escapeHtml(scope)}</span></p>`;
+}
 
 export function escapeHtml(value) {
   return String(value ?? "")
@@ -279,6 +337,11 @@ const STYLES = `
     .feed-toggle, .metadata-toggle { margin-top: 0; }
     .metadata-toggle { margin-top: 14px; }
     .empty { padding: 40px 0; text-align: center; }
+    .filter-form { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+    .filter-form label { display: grid; gap: 4px; font-size: 12px; color: #68717d; }
+    .filter-form select { appearance: auto; font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid #dfe3e8; border-radius: 6px; background: #fff; color: #20242a; max-width: 320px; }
+    .feed-summary { grid-column: 1 / -1; margin: 0 0 4px; font-size: 13px; color: #344054; }
+    .feed-summary strong { font-weight: 700; }
 
     /* Gallery view */
     main[data-view="gallery"] .feed { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
@@ -422,10 +485,10 @@ const CREATE_SCRIPT = `
           if (version === null) { version = next; return; }
           if (next === version) return;
           version = next;
-          const partial = await fetch("/partial", { cache: "no-store" });
+          const partial = await fetch("/partial" + window.location.search, { cache: "no-store" });
           if (!partial.ok) throw new Error("partial " + partial.status);
           feed.innerHTML = await partial.text();
-          if (count) count.textContent = next.split(":")[0];
+          if (count) count.textContent = String(feed.querySelectorAll(".feed-item").length);
           updateTimes();
           bindMedia();
           flash();
@@ -470,6 +533,9 @@ function renderDocument({ view, body, script = "", crumbs = "" }) {
 
 export async function renderPage(items, context = {}) {
   const renderedItems = await renderItems(items, context);
+  const projects = context.projects ?? projectGroups(items);
+  const families = context.families ?? [...new Set(items.map((item) => item.family))].sort();
+  const active = context.active ?? { project: "", family: "" };
   const body = `
     <section class="topbar">
       <div class="title-row">
@@ -482,10 +548,18 @@ export async function renderPage(items, context = {}) {
         <button type="button" data-view="gallery">Gallery</button>
       </div>
     </section>
+    ${renderFilters({ projects, families, active })}
     <section class="feed" id="feed">
+      ${renderSummary(items, active)}
       ${items.length > 0 ? renderedItems : "<p class=\"muted empty\">No generations yet.</p>"}
     </section>`;
   return renderDocument({ view: "list", body, script: CREATE_SCRIPT });
+}
+
+/** The live refresh swaps the whole feed, summary included. */
+export async function renderFeed(items, context = {}) {
+  const renderedItems = await renderItems(items, context);
+  return `${renderSummary(items, context.active ?? { project: "", family: "" })}${renderedItems}`;
 }
 
 export async function renderDetailPage(item, context = {}) {
@@ -556,27 +630,41 @@ export async function metadataVersion(metadataDir) {
   return `${files.length}:${Math.round(latest)}`;
 }
 
-export async function checkDashboard(context) {
-  const items = await readFeedItems(context);
-  const html = await renderPage(items, context);
+export async function checkDashboard(context = {}) {
+  const paths = pathsFor(context);
+  const items = await readFeedItems(paths);
+  const html = await renderPage(items, paths);
   if (!html.includes(PAGE_TITLE)) throw new Error("HTML title missing");
   if (items.length > 0 && !html.includes("Output Assets")) throw new Error("feed content missing");
   return items.length;
 }
 
-export function createDashboardServer(context) {
+export function createDashboardServer(context = {}) {
+  const paths = pathsFor(context);
+  const startedAt = new Date().toISOString();
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+      const active = {
+        project: url.searchParams.get("project") ?? "",
+        family: url.searchParams.get("family") ?? "",
+      };
       if (url.pathname === "/") {
-        const items = await readFeedItems(context);
+        const all = await readFeedItems(paths);
+        const items = filterItems(all, active);
+        const view = {
+          ...paths,
+          active,
+          projects: projectGroups(all),
+          families: [...new Set(all.map((item) => item.family))].sort(),
+        };
         response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-        response.end(await renderPage(items, context));
+        response.end(await renderPage(items, view));
         return;
       }
       if (url.pathname === "/item") {
         const task = url.searchParams.get("task") ?? "";
-        const items = await readFeedItems(context);
+        const items = await readFeedItems(paths);
         const item = items.find((candidate) => candidate.taskId === task);
         if (!item) {
           response.writeHead(404, { "Content-Type": "text/html; charset=utf-8" });
@@ -584,28 +672,41 @@ export function createDashboardServer(context) {
           return;
         }
         response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-        response.end(await renderDetailPage(item, context));
+        response.end(await renderDetailPage(item, paths));
         return;
       }
       if (url.pathname === "/partial") {
-        const items = await readFeedItems(context);
+        const items = filterItems(await readFeedItems(paths), active);
         response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-        response.end(items.length > 0 ? await renderItems(items, context) : "");
+        response.end(await renderFeed(items, { ...paths, active }));
         return;
       }
       if (url.pathname === "/api/version") {
         response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
-        response.end(await metadataVersion(context.metadataDir));
+        response.end(await metadataVersion(paths.metadataDir));
+        return;
+      }
+      if (url.pathname === "/api/health") {
+        const items = await readFeedItems(paths);
+        response.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+        response.end(JSON.stringify({
+          app: "kie-dashboard",
+          version: dashboardVersion,
+          storeDir: paths.storeDir,
+          metadataDir: paths.metadataDir,
+          runs: items.length,
+          startedAt,
+        }, null, 2));
         return;
       }
       if (url.pathname === "/api/assets") {
-        const items = await readFeedItems(context);
+        const items = filterItems(await readFeedItems(paths), active);
         response.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
         response.end(JSON.stringify(items, null, 2));
         return;
       }
       if (url.pathname === "/asset") {
-        await serveAsset(url.searchParams.get("path") ?? "", response, context);
+        await serveAsset(url.searchParams.get("path") ?? "", response, paths);
         return;
       }
       response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });

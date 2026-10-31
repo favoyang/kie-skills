@@ -230,3 +230,81 @@ test("the detail route renders a breadcrumb and the full block", async () => {
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test("project groups collapse worktrees into one repository", async () => {
+  const { projectGroups, filterItems } = await import("../scripts/lib/dashboard.js");
+  const items = [
+    { ...feedItem(1), project: { key: "/repo/.git", name: "repo" } },
+    { ...feedItem(2), project: { key: "/repo/.git", name: "repo" } },
+    { ...feedItem(3), project: { key: "/other/.git", name: "other" } },
+    { ...feedItem(4), project: { key: "", name: "" } },
+  ];
+  const groups = projectGroups(items);
+  assert.deepEqual(groups.map((group) => [group.name, group.runs]), [["repo", 2], ["other", 1], ["unknown", 1]]);
+  assert.equal(filterItems(items, { project: "/repo/.git" }).length, 2);
+  assert.equal(filterItems(items, { project: "repo", family: "music" }).length, 2);
+  assert.equal(filterItems(items, {}).length, 4);
+});
+
+test("the page lists projects and shows a filtered summary", async () => {
+  const items = [
+    { ...feedItem(1), project: { key: "/repo/.git", name: "repo" } },
+    { ...feedItem(2), project: { key: "/other/.git", name: "other" } },
+  ];
+  const html = await renderPage([items[0]], {
+    active: { project: "/repo/.git", family: "" },
+    projects: [{ key: "/repo/.git", name: "repo", runs: 1, credits: 22.5 }, { key: "/other/.git", name: "other", runs: 1, credits: 22.5 }],
+    families: ["music"],
+  });
+  assert.match(html, /name="project"/);
+  assert.match(html, /<option value="\/repo\/\.git" selected>repo \(1\)<\/option>/);
+  assert.match(html, /id="summary"/);
+  assert.match(html, /<strong>1<\/strong> run\(s\)/);
+  assert.match(html, /filtered/);
+});
+
+test("the health endpoint identifies the dashboard and its store", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "kie-health-"));
+  const server = createDashboardServer({ storeDir: dir });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const health = await (await fetch(`${base}/api/health`)).json();
+    assert.equal(health.app, "kie-dashboard");
+    assert.equal(health.storeDir, dir);
+    assert.equal(health.metadataDir, path.join(dir, "metadata"));
+    assert.equal(typeof health.version, "string");
+    assert.equal(health.runs, 0);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("the server filters by project and keeps the filter on partial refresh", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "kie-filter-"));
+  const metadataDir = path.join(dir, "metadata");
+  await (await import("node:fs/promises")).mkdir(metadataDir, { recursive: true });
+  const record = (taskId, project) => JSON.stringify({
+    timestamp: "2026-06-26T00:00:00.000Z",
+    project,
+    request: { model: "m", input: { prompt: taskId } },
+    final_response: { data: { taskId, state: "success" } },
+  });
+  await writeFile(path.join(metadataDir, "a.metadata.json"), record("a", { key: "/repo/.git", name: "repo" }), "utf8");
+  await writeFile(path.join(metadataDir, "b.metadata.json"), record("b", { key: "/other/.git", name: "other" }), "utf8");
+
+  const server = createDashboardServer({ storeDir: dir });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const page = await (await fetch(`${base}/?project=${encodeURIComponent("/repo/.git")}`)).text();
+    assert.equal((page.match(/class="feed-item"/g) ?? []).length, 1);
+    assert.match(page, /All projects \(2\)/);
+
+    const partial = await (await fetch(`${base}/partial?project=${encodeURIComponent("/repo/.git")}`)).text();
+    assert.equal((partial.match(/class="feed-item"/g) ?? []).length, 1);
+    assert.match(partial, /id="summary"/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

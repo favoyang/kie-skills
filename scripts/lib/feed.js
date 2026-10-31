@@ -181,10 +181,18 @@ export function feedItemFromRecord(metadataPath, record, { projectDir = process.
   const apiParam = previewApiParam(parsedParam, record?.reference_fixture);
   const fallbackTaskId = record?.create_response?.data?.taskId;
 
+  const projectKey = asString(
+    record?.project?.key ?? record?.project?.git_common_dir ?? record?.project?.dir,
+    "",
+  );
   return {
     metadataPath: path.isAbsolute(metadataPath) ? path.relative(projectDir, metadataPath) : metadataPath,
     timestamp: asString(record?.timestamp, path.basename(metadataPath).slice(0, 15)),
     provider: asString(record?.provider, "unknown provider"),
+    project: {
+      key: projectKey,
+      name: asString(record?.project?.name, projectKey ? path.basename(projectKey) : ""),
+    },
     family: asString(record?.api_family, "unknown API"),
     mode: asString(record?.mode, "unknown mode"),
     title: asString(input.title),

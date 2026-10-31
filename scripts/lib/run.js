@@ -1,6 +1,6 @@
 import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
-import { apiBase, defaultCacheDir, loadConfig, resolveMetadataDir, resolveOutDir, resolveProject } from "./config.js";
+import { apiBase, defaultCacheDir, loadConfig, projectIdentity, resolveMetadataDir, resolveOutDir } from "./config.js";
 import { KieError, downloadToFile, kieRequest } from "./http.js";
 import { loadCatalog, loadSchema, fetchBalance } from "./discovery.js";
 import { inputContract, parseCreditEstimate, validateInput } from "./schema.js";
@@ -224,11 +224,11 @@ export async function runModel({
   log = console.log,
 } = {}) {
   const plan = await planRun({ model, input, apiKey, fetchFn, cacheDir, config, refresh, maxCredits, uploads, cwd });
-  const project = resolveProject(cwd);
-  const outDir = outputRoot ? path.resolve(outputRoot) : resolveOutDir({ config: plan.config });
-  const metadataDir = metadataRoot ? path.resolve(metadataRoot) : resolveMetadataDir({ outDir, config: plan.config });
+  const project = projectIdentity(cwd);
+  const outDir = outputRoot ? path.resolve(outputRoot) : resolveOutDir();
+  const metadataDir = metadataRoot ? path.resolve(metadataRoot) : resolveMetadataDir({ outDir });
 
-  log(`project    ${project.dir} (${project.source})`);
+  log(`project    ${project.dir} (${project.source})${project.name ? ` [${project.name}]` : ""}`);
   log(`model      ${plan.model}`);
   log(`family     ${plan.verdict.family} (${plan.verdict.taskTypes.join(", ")})`);
   log(`route      ${plan.contract.route}`);
