@@ -325,8 +325,8 @@ const STYLES = `
     .text-asset pre { white-space: pre-wrap; max-height: 360px; overflow: auto; }
     .reference-images { margin-top: 16px; }
     .reference-strip { display: flex; flex-wrap: wrap; gap: 10px; min-width: 0; }
-    .reference-image { width: 156px; }
-    .reference-image img { width: 156px; height: 156px; object-fit: contain; }
+    .reference-image { width: 234px; }
+    .reference-image img { width: 234px; height: 234px; object-fit: contain; }
     a.image-open { cursor: zoom-in; }
     figure { margin: 0; min-width: 0; max-width: 100%; }
     img, video { display: block; width: auto; max-width: 100%; max-height: 520px; border-radius: 6px; border: 1px solid #dfe3e8; background: #f6f7f9; }
