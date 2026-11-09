@@ -159,8 +159,9 @@ node scripts/cli.js dashboard
 ```
 
 A read-only page over the store: prompts, inputs, credits, elapsed time, and playable
-media. It watches the metadata folder and shows new runs within a few seconds, filters
-by repository and family, and the navbar toggles between list and gallery views.
+media. Input images are shown as a reference strip on each run. It watches the metadata
+folder and shows new runs within a few seconds, filters by repository and family, and
+the navbar toggles between list and gallery views.
 
 ```sh
 node scripts/cli.js dashboard --open          # reuse or start, then open the browser
@@ -185,7 +186,7 @@ default; `--host 0.0.0.0` exposes it on a trusted network, with no authenticatio
 ## Development
 
 ```sh
-npm test        # 127 tests, no network or credentials required
+npm test        # 131 tests, no network or credentials required
 npm run check   # tests plus a dashboard render check
 ```
 

@@ -206,7 +206,13 @@ test("the detail route renders a breadcrumb and the full block", async () => {
       timestamp: "2026-06-26T00:00:00.000Z",
       api_family: "image",
       mode: "gpt-image-2-text-to-image",
-      request: { model: "gpt-image-2-text-to-image", input: { prompt: "a mug" } },
+      request: {
+        model: "gpt-image-2-image-to-image",
+        input: {
+          prompt: "a mug",
+          image_urls: ["https://example.test/reference.png", "https://example.test/secondary.webp"],
+        },
+      },
       final_response: { data: { taskId: "task-1", state: "success" } },
     }),
     "utf8",
@@ -223,6 +229,9 @@ test("the detail route renders a breadcrumb and the full block", async () => {
     assert.match(detail, /<main data-view="detail">/);
     assert.match(detail, /<h1>KIE Generations<\/h1>/);
     assert.match(detail, /← Generations/);
+    assert.match(detail, /Reference Images/);
+    assert.match(detail, /<img src="https:\/\/example\.test\/reference\.png"/);
+    assert.match(detail, /<img src="https:\/\/example\.test\/secondary\.webp"/);
 
     const missing = await fetch(`${base}/item?task=nope`);
     assert.equal(missing.status, 404);

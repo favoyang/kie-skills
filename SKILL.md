@@ -221,7 +221,8 @@ node scripts/cli.js dashboard
 
 It reads `<store>/metadata/*.metadata.json` and serves media from `<store>/`. Each run
 shows its prompt, inputs, credits, elapsed seconds, assets, and a link to its metadata
-file. A project selector filters by repository (all worktrees collapse into one entry),
+file. Input images are shown as a reference strip, including model-specific fields such
+as `image_urls`. A project selector filters by repository (all worktrees collapse into one entry),
 a family selector narrows by image, music, or speech, and a summary line totals runs
 and credits for the current filter. The page polls for new runs and updates itself
 within a few seconds. A navbar toggle switches between list view and a thumbnail

@@ -49,6 +49,98 @@ test("feed mapping exposes prompt, model, state, and credits", () => {
   assert.equal(typeof item.otherInputs.api_param, "object");
 });
 
+test("reference images come from model-specific image fields", () => {
+  const item = feedItemFromRecord("/repo/kie-output/metadata/images.json", {
+    request: {
+      model: "google/nano-banana-edit",
+      input: {
+        prompt: "a mug",
+        image_urls: [
+          "https://example.test/lane.webp",
+          "https://example.test/pip.png?token=1",
+          "https://example.test/signed",
+        ],
+        image_size: "16:9",
+      },
+    },
+    final_response: { data: { taskId: "task-images", state: "success" } },
+  }, context);
+
+  assert.deepEqual(item.referenceImages, [
+    { url: "https://example.test/lane.webp" },
+    { url: "https://example.test/pip.png?token=1" },
+    { url: "https://example.test/signed" },
+  ]);
+  assert.equal(item.otherInputs.image_urls, undefined);
+  assert.equal(item.otherInputs.image_size, "16:9");
+});
+
+test("image config fields are not mistaken for references", () => {
+  const item = feedItemFromRecord("/repo/kie-output/metadata/config.json", {
+    request: {
+      model: "m",
+      input: {
+        prompt: "a mug",
+        image_size: "16/9",
+        image_aspect_ratio: "3/2",
+        image_format: "image/png",
+        image_prompt: "a cat / a dog",
+        image_quality: "high/medium",
+        image_url: "file:///tmp/not-servable.png",
+      },
+    },
+    final_response: { data: { taskId: "task-config", state: "success" } },
+  }, context);
+
+  assert.deepEqual(item.referenceImages, []);
+});
+
+test("a scalar image_url becomes a reference and supports camelCase names", () => {
+  const item = feedItemFromRecord("/repo/kie-output/metadata/scalar.json", {
+    request: {
+      model: "m",
+      input: {
+        prompt: "a mug",
+        imageUrl: "https://example.test/scalar.png?sig=1",
+        maskUrl: "https://example.test/mask",
+        style_image: "https://example.test/style.png",
+        imageurls: ["https://example.test/compact.webp"],
+      },
+    },
+    final_response: { data: { taskId: "task-scalar", state: "success" } },
+  }, context);
+
+  assert.deepEqual(item.referenceImages, [
+    { url: "https://example.test/scalar.png?sig=1" },
+    { url: "https://example.test/mask" },
+    { url: "https://example.test/style.png" },
+    { url: "https://example.test/compact.webp" },
+  ]);
+});
+
+test("generic input_urls only contributes image references", () => {
+  const item = feedItemFromRecord("/repo/kie-output/metadata/media.json", {
+    request: {
+      model: "m",
+      input: {
+        prompt: "a mug",
+        input_urls: [
+          "https://example.test/a.png",
+          "https://example.test/clip.mp4",
+          "https://example.test/signed-link",
+          "https://example.test/notes.pdf",
+        ],
+      },
+    },
+    final_response: { data: { taskId: "task-media", state: "success" } },
+  }, context);
+
+  assert.deepEqual(item.referenceImages, [
+    { url: "https://example.test/a.png" },
+    { url: "https://example.test/signed-link" },
+  ]);
+});
+
 test("credits fall back to estimates so migrated Suno runs are not blank", () => {
   const estimated = feedItemFromRecord("/repo/kie-output/metadata/b.json", {
     request: { model: "V5", input: { prompt: "x" } },
