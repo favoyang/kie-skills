@@ -67,6 +67,9 @@ test("renderPage renders a feed with prompt and output assets", async () => {
   assert.match(html, /kie-output%2Faudio%2Fa.mp3/);
   assert.match(html, /Reference Images/);
   assert.match(html, /class="reference-image"/);
+  assert.match(html, /<a class="image-open" data-kind="image" href="\/asset\?path=kie-output%2Fimages%2Fa\.png">/);
+  assert.match(html, /<a class="image-open" data-kind="image" href="\/asset\?path=kie-output%2Fimages%2Freference\.png">/);
+  assert.match(html, /a\.tile-open, a\.image-open/);
   assert.match(html, /Text Assets/);
   assert.match(html, /10 \/ \$0\.050/);
   assert.match(html, /Length 1:15\.4/);
@@ -213,6 +216,7 @@ test("the detail route renders a breadcrumb and the full block", async () => {
           image_urls: ["https://example.test/reference.png", "https://example.test/secondary.webp"],
         },
       },
+      downloaded: [{ path: "images/output.png" }],
       final_response: { data: { taskId: "task-1", state: "success" } },
     }),
     "utf8",
@@ -232,6 +236,15 @@ test("the detail route renders a breadcrumb and the full block", async () => {
     assert.match(detail, /Reference Images/);
     assert.match(detail, /<img src="https:\/\/example\.test\/reference\.png"/);
     assert.match(detail, /<img src="https:\/\/example\.test\/secondary\.webp"/);
+    assert.match(detail, /<a class="image-open" data-kind="image" href="https:\/\/example\.test\/reference\.png">/);
+    assert.match(detail, /<a class="image-open" data-kind="image" href="\/asset\?path=images%2Foutput\.png">/);
+    assert.match(detail, /a\.tile-open, a\.image-open/);
+    assert.match(detail, /const isDetail = main\.dataset\.view === "detail"/);
+    assert.match(detail, /if \(!isDetail\)/);
+    assert.match(detail, /document\.createElement\(kind === "image" \? "img" : kind\)/);
+    assert.doesNotMatch(detail, /dialogBody\.innerHTML = '<img/);
+    assert.doesNotMatch(detail, /class="view-toggle"/);
+    assert.match(detail, /<section class="feed" id="feed">/);
 
     const missing = await fetch(`${base}/item?task=nope`);
     assert.equal(missing.status, 404);
