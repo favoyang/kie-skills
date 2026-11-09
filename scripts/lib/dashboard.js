@@ -160,7 +160,7 @@ function renderAsset(asset) {
   const url = assetUrl(asset.path);
   const label = escapeHtml(asset.path);
   if (kind === "image") {
-    return `<figure><a href="${url}"><img src="${url}" alt="${label}" loading="lazy"></a>${renderAssetCaption(asset, label)}</figure>`;
+    return `<figure><a class="image-open" data-kind="image" href="${url}"><img src="${url}" alt="${label}" loading="lazy"></a>${renderAssetCaption(asset, label)}</figure>`;
   }
   if (kind === "audio") {
     return `<figure><audio src="${url}" controls preload="none"></audio>${renderAssetCaption(asset, label)}</figure>`;
@@ -189,7 +189,7 @@ function renderReferenceImage(image) {
   if (!rawUrl) return "";
   const label = escapeHtml(image.path ?? image.url ?? "reference image");
   const href = escapeHtml(rawUrl);
-  return `<figure class="reference-image"><a href="${href}"><img src="${href}" alt="${label}" loading="lazy"></a><figcaption>${label}</figcaption></figure>`;
+  return `<figure class="reference-image"><a class="image-open" data-kind="image" href="${href}"><img src="${href}" alt="${label}" loading="lazy"></a><figcaption>${label}</figcaption></figure>`;
 }
 
 function renderLocalTime(timestamp) {
@@ -327,6 +327,7 @@ const STYLES = `
     .reference-strip { display: flex; flex-wrap: wrap; gap: 10px; min-width: 0; }
     .reference-image { width: 156px; }
     .reference-image img { width: 156px; height: 156px; object-fit: contain; }
+    a.image-open { cursor: zoom-in; }
     figure { margin: 0; min-width: 0; max-width: 100%; }
     img, video { display: block; width: auto; max-width: 100%; max-height: 520px; border-radius: 6px; border: 1px solid #dfe3e8; background: #f6f7f9; }
     audio { width: 100%; }
@@ -393,17 +394,20 @@ const CREATE_SCRIPT = `
       const buttons = [...document.querySelectorAll(".view-toggle button")];
       const dialog = document.getElementById("lightbox");
       const dialogBody = document.getElementById("lightbox-body");
+      const isDetail = main.dataset.view === "detail";
 
       const applyView = (view) => {
         main.dataset.view = view;
         for (const button of buttons) button.classList.toggle("active", button.dataset.view === view);
         try { localStorage.setItem("kie-view", view); } catch {}
       };
-      let view = "list";
-      try { view = localStorage.getItem("kie-view") || "list"; } catch {}
-      if (view !== "gallery") view = "list";
-      applyView(view);
-      for (const button of buttons) button.addEventListener("click", () => applyView(button.dataset.view));
+      if (!isDetail) {
+        let view = "list";
+        try { view = localStorage.getItem("kie-view") || "list"; } catch {}
+        if (view !== "gallery") view = "list";
+        applyView(view);
+        for (const button of buttons) button.addEventListener("click", () => applyView(button.dataset.view));
+      }
 
       const closeLightbox = () => {
         dialogBody.innerHTML = "";
@@ -414,23 +418,25 @@ const CREATE_SCRIPT = `
       document.querySelector(".lightbox-close").addEventListener("click", closeLightbox);
 
       const openLightbox = (kind, src) => {
-        if (kind === "image") {
-          dialogBody.innerHTML = '<img src="' + src + '" alt="">';
-        } else if (kind === "video") {
-          dialogBody.innerHTML = '<video src="' + src + '" controls autoplay playsinline></video>';
-        } else if (kind === "audio") {
-          dialogBody.innerHTML = '<audio src="' + src + '" controls autoplay></audio>';
-        } else {
-          return;
+        if (!["image", "video", "audio"].includes(kind)) return;
+        const element = document.createElement(kind === "image" ? "img" : kind);
+        element.setAttribute("src", src);
+        if (kind === "image") element.setAttribute("alt", "");
+        if (kind === "video") element.setAttribute("playsinline", "");
+        if (kind !== "image") {
+          element.setAttribute("controls", "");
+          element.setAttribute("autoplay", "");
         }
+        dialogBody.replaceChildren(element);
         dialog.showModal();
       };
 
       feed.addEventListener("click", (event) => {
-        const link = event.target.closest("a.tile-open");
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+        const link = event.target.closest("a.tile-open, a.image-open");
         if (!link) return;
         event.preventDefault();
-        openLightbox(link.dataset.kind, link.getAttribute("href"));
+        openLightbox(link.dataset.kind || "image", link.getAttribute("href"));
       });
 
       const resetMedia = (element) => {
@@ -472,6 +478,7 @@ const CREATE_SCRIPT = `
       let version = null;
       let timer = null;
       const flash = () => {
+        if (!live) return;
         live.classList.add("pulse");
         clearTimeout(timer);
         timer = setTimeout(() => live.classList.remove("pulse"), 1200);
@@ -493,11 +500,13 @@ const CREATE_SCRIPT = `
           bindMedia();
           flash();
         } catch {
-          live.classList.add("off");
+          if (live) live.classList.add("off");
         }
       };
-      setInterval(check, 3000);
-      document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
+      if (!isDetail) {
+        setInterval(check, 3000);
+        document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
+      }
 
       window.addEventListener("pageshow", bindMedia);
       window.addEventListener("pageshow", updateTimes);
@@ -575,8 +584,8 @@ export async function renderDetailPage(item, context = {}) {
       <span>/</span>
       <span>${escapeHtml(item.family)} · ${escapeHtml(item.mode)}</span>
     </nav>
-    <section class="feed">${article}</section>`;
-  return renderDocument({ view: "detail", body, script: "" });
+    <section class="feed" id="feed">${article}</section>`;
+  return renderDocument({ view: "detail", body, script: CREATE_SCRIPT });
 }
 
 async function serveAsset(rawPath, response, context) {
