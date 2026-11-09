@@ -148,8 +148,9 @@ node scripts/cli.js dashboard
 # KIE dashboard: http://127.0.0.1:4173
 ```
 
-一个只读页面，读的是 store：prompt、输入、额度、耗时和可直接播放的媒体。它会盯着 metadata
-目录，几秒内显示新运行；可以按仓库和系列筛选；导航栏可以在列表视图和画廊视图之间切换。
+一个只读页面，读的是 store：prompt、输入、额度、耗时和可直接播放的媒体。输入图片会以参考图
+条展示。它会盯着 metadata 目录，几秒内显示新运行；可以按仓库和系列筛选；导航栏可以在列表
+视图和画廊视图之间切换。
 
 ```sh
 node scripts/cli.js dashboard --open          # 复用或启动，然后打开浏览器
@@ -172,7 +173,7 @@ node scripts/cli.js service status
 ## 开发
 
 ```sh
-npm test        # 127 个测试，不需要网络或凭据
+npm test        # 131 个测试，不需要网络或凭据
 npm run check   # 测试加一次 dashboard 渲染检查
 ```
 

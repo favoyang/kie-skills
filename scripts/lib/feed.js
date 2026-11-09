@@ -5,6 +5,16 @@ const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif"]);
 const AUDIO_EXT = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
 const VIDEO_EXT = new Set([".mp4", ".webm", ".mov"]);
 
+// Model schemas name image inputs inconsistently, and some config fields share
+// those words. Reference fields keep an image token; config fields carry a
+// config token such as image_size or image_aspect_ratio.
+const IMAGE_TOKENS = new Set(["image", "images", "img", "imgs", "photo", "photos", "picture", "pictures", "pic", "pics", "mask", "masks"]);
+const CONFIG_TOKENS = new Set([
+  "size", "width", "height", "ratio", "aspect", "format", "quality", "count", "number",
+  "seed", "steps", "strength", "weight", "scale", "style", "orientation", "prompt",
+  "model", "type", "mode", "resolution", "text", "negative",
+]);
+
 const CONTENT_TYPES = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -154,21 +164,83 @@ function downloadedAssetsFromRecord(record) {
   });
 }
 
-function referenceImagesFromInput(input, referenceFixture) {
-  if (referenceFixture) return [{ path: referenceFixture }];
-  return stringArray(input.input_urls).map((url) => ({ url }));
+function withoutQuery(value) {
+  const index = value.search(/[?#]/);
+  return index === -1 ? value : value.slice(0, index);
 }
 
-function withoutInputUrls(value) {
+function fieldTokens(field) {
+  return field
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+function looksLikeReference(value) {
+  if (/^file:/i.test(value)) return false;
+  if (/^(https?:\/\/|data:image\/)/i.test(value)) return true;
+  return assetKind(value) === "image";
+}
+
+/**
+ * Input images are declared under names that differ per model: image_urls,
+ * image_url, input_urls, maskUrl, and so on. Field names also carry config
+ * values such as image_size, so an image token alone is not enough.
+ */
+function isImageReference(field, value) {
+  if (typeof value !== "string" || value.trim() === "") return false;
+  const tokens = fieldTokens(field);
+  const compact = field.toLowerCase();
+  const lastImage = tokens.findLastIndex((token) => IMAGE_TOKENS.has(token));
+  // A config token only disqualifies a reference when it follows the image
+  // token: image_size is config, style_image is a reference.
+  const configAfterImage = lastImage >= 0
+    && tokens.slice(lastImage + 1).some((token) => CONFIG_TOKENS.has(token));
+  const compactReference = /^((images?|imgs?|photos?|pictures?|pics?|masks?)(urls?|paths?|files?)?)$/.test(compact);
+  const genericMedia = /^input_?urls?$/.test(compact)
+    || (tokens.length === 2 && tokens[0] === "input" && (tokens[1] === "url" || tokens[1] === "urls"));
+  const imageField = (lastImage >= 0 && !configAfterImage) || compactReference;
+  if (!imageField && !genericMedia) return false;
+  const candidate = withoutQuery(value);
+  if (!looksLikeReference(candidate)) return false;
+  const kind = assetKind(candidate);
+  if (kind === "audio" || kind === "video") return false;
+  // Generic media fields may hold other file types, so require an image
+  // extension there; extensionless URLs are usually signed image links.
+  return imageField || kind === "image" || path.extname(candidate) === "";
+}
+
+function withoutReferenceFields(value) {
   if (!value || typeof value !== "object") return value;
-  const { input_urls: _inputUrls, ...rest } = value;
+  const rest = {};
+  for (const [field, entry] of Object.entries(value)) {
+    const entries = typeof entry === "string" ? [entry] : stringArray(entry);
+    if (entries.length > 0 && entries.every((item) => isImageReference(field, item))) continue;
+    rest[field] = entry;
+  }
   return rest;
+}
+
+function referenceImagesFromInput(input, referenceFixture) {
+  if (referenceFixture) return [{ path: referenceFixture }];
+  const images = [];
+  const seen = new Set();
+  for (const [field, value] of Object.entries(input ?? {})) {
+    const entries = typeof value === "string" ? [value] : stringArray(value);
+    for (const entry of entries) {
+      if (!isImageReference(field, entry) || seen.has(entry)) continue;
+      seen.add(entry);
+      images.push(/^(https?:\/\/|data:image\/)/i.test(entry) ? { url: entry } : { path: entry });
+    }
+  }
+  return images;
 }
 
 function previewApiParam(value, referenceFixture) {
   if (!referenceFixture || !value || typeof value !== "object") return value;
   const param = { ...value };
-  if ("input" in param) param.input = withoutInputUrls(parseJsonish(param.input));
+  if ("input" in param) param.input = withoutReferenceFields(parseJsonish(param.input));
   return param;
 }
 
@@ -176,7 +248,7 @@ export function feedItemFromRecord(metadataPath, record, { projectDir = process.
   const finalData = record?.final_response?.data ?? {};
   const input = record?.request?.input ?? {};
   const prompt = asString(input.prompt);
-  const { prompt: _prompt, input_urls: _inputUrls, ...otherInputs } = input;
+  const { prompt: _prompt, ...otherInputs } = withoutReferenceFields(input);
   const parsedParam = parseJsonish(finalData.param);
   const apiParam = previewApiParam(parsedParam, record?.reference_fixture);
   const fallbackTaskId = record?.create_response?.data?.taskId;
